@@ -1,7 +1,7 @@
-"""100-point Genesis Hackathon rubric verification suite (TZ Section 10).
+"""AuditLab Platform Verification Suite (100-point automated scorecard).
 
 Provides `run_full_rubric_verification(run_unittests: bool = True, root: Path | None = None) -> dict`
-returning a structured JSON-serializable scorecard across all 5 rubric categories:
+returning a structured JSON-serializable scorecard across all 5 verification categories:
   1. Contract & Isolation (25 pts, 20 explicit checks)
   2. Data & Ground Truth (25 pts, 20 held-out eval episodes)
   3. Reward Robustness (25 pts, 20 explicit checks)
@@ -694,7 +694,7 @@ def run_full_rubric_verification(
     root: Path | str | None = None,
     verbose_tests: bool = False,
 ) -> dict[str, Any]:
-    """Execute the full 100-point Genesis Hackathon rubric verification suite."""
+    """Execute the AuditLab Platform Verification Suite (100-point scorecard)."""
     t0 = time.perf_counter()
     repo = Path(root).resolve() if root is not None else _repo_root()
     configs_dir = repo / "configs"
@@ -763,7 +763,7 @@ def run_full_rubric_verification(
     # 5b. Versioned configs
     cfg_ok = True
     cfg_details: list[str] = []
-    for split, expected_n in (("train", 10), ("dev", 10), ("eval", 20)):
+    for split, expected_n in (("train", 10), ("dev", 10), ("val", 10), ("eval", 20)):
         p = configs_dir / f"{split}_configs.json"
         if not p.exists():
             cfg_ok = False

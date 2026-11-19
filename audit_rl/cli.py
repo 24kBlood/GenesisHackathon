@@ -1,11 +1,12 @@
-"""Command-line interface for the Audit RL environment.
+"""Command-line interface for AuditLab.
 
 Subcommands:
 - generate-datasets: generate open train/dev datasets and trajectories/trajectories.jsonl
 - run-baselines: evaluate all 4 baseline policies on the 20 held-out eval episodes (SubprocessAuditEnv, eval mode)
-- verify: one-command full verification suite matching the 100-point rubric
+- train: train LearnableAuditPolicy on train split via terminal rewards and evaluate on val & eval
+- verify: one-command AuditLab Platform Verification Suite (100-point scorecard)
 - demo: readable step-by-step walkthrough of a single audit episode
-- gui: launch the local offline Web GUI dashboard
+- gui: launch the local offline AuditLab Web UI
 """
 
 from __future__ import annotations
@@ -241,7 +242,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         print(json.dumps(report, indent=2))
         return 0 if report["overall_pass"] else 1
 
-    print("\n=== Audit RL 100-Point Rubric Verification Scorecard ===")
+    print("\n=== AuditLab Platform Verification Scorecard ===")
     ut = report["unittest"]
     ut_status = "PASS" if ut["passed"] else "FAIL"
     print(f"[{ut_status}] Unit & Integration Tests: {ut['ran']} run, {ut['failures']} failures, {ut['errors']} errors")
@@ -341,6 +342,61 @@ def cmd_demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_train(args: argparse.Namespace) -> int:
+    from audit_rl.trainer import run_training_experiment
+
+    root = Path(args.root).resolve() if args.root else _repo_root()
+    report = run_training_experiment(
+        seed=int(args.seed),
+        epochs=int(args.epochs),
+        train_split="train",
+        eval_split="eval",
+        save_to_store=True,
+        root=root,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2))
+        return 0
+
+    print(
+        f"=== AuditLab Policy Training Summary "
+        f"(version={report['policy_version']}, seed={report['seed']}, epochs={report['epochs']}) ==="
+    )
+    print(
+        f"Train mean reward : {report['train_mean_reward_before']:.4f} -> "
+        f"{report['train_mean_reward_after']:.4f} "
+        f"(delta={report['improvement_delta']['train_reward']:+.4f})"
+    )
+    print(
+        f"Val  (10 unseen)  : F1 {report['untrained_val']['f1']:.4f} -> "
+        f"{report['trained_val']['f1']:.4f} "
+        f"(delta={report['improvement_delta']['val_f1']:+.4f}) | "
+        f"Return {report['untrained_val']['return']:.4f} -> {report['trained_val']['return']:.4f}"
+    )
+    print(
+        f"Eval (20 unseen)  : F1 {report['untrained_eval']['f1']:.4f} -> "
+        f"{report['trained_eval']['f1']:.4f} "
+        f"(delta={report['improvement_delta']['eval_f1']:+.4f}) | "
+        f"Return {report['untrained_eval']['return']:.4f} -> {report['trained_eval']['return']:.4f}"
+    )
+    print(
+        f"Rule-based (eval) : F1 {report['rule_based_eval']['f1']:.4f} | "
+        f"Return {report['rule_based_eval']['return']:.4f} | "
+        f"Steps {report['rule_based_eval']['steps']:.2f}"
+    )
+    print("\nCategory Breakdown (20 held-out eval episodes):")
+    print(f"{'Category':<14} | {'Untrained F1':>12} | {'Trained F1':>10} | {'Rule-Based F1':>13}")
+    print("-" * 58)
+    for cat, vals in report["category_breakdown"].items():
+        print(
+            f"{cat:<14} | {vals['untrained']['f1']:>12.4f} | "
+            f"{vals['trained']['f1']:>10.4f} | {vals['rule_based']['f1']:>13.4f}"
+        )
+    print(f"\nSaved experiment_id={report['experiment_id']} in {report['duration_s']:.2f}s")
+    return 0
+
+
 def cmd_gui(args: argparse.Namespace) -> int:
     from audit_rl.gui import run_gui
 
@@ -352,7 +408,7 @@ def cmd_gui(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="audit-rl",
-        description="FinTech RL environment for financial audit model training.",
+        description="AuditLab — An autonomous financial audit simulation and AI training environment.",
     )
     parser.add_argument("--root", default=None, help="Optional project root directory override.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -362,13 +418,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_base = sub.add_parser("run-baselines", help="Run all 4 baseline policies on 20 eval episodes.")
     p_base.add_argument("--json", action="store_true", help="Print JSON summary only.")
 
-    p_ver = sub.add_parser("verify", help="Run full one-command 100-point rubric verification suite.")
+    p_train = sub.add_parser("train", help="Train LearnableAuditPolicy via terminal rewards and evaluate on val & eval.")
+    p_train.add_argument("--epochs", type=int, default=2, help="Number of training epochs (default: 2).")
+    p_train.add_argument("--seed", type=int, default=42, help="Deterministic training seed (default: 42).")
+    p_train.add_argument("--json", action="store_true", help="Print full JSON training report.")
+
+    p_ver = sub.add_parser("verify", help="Run full one-command AuditLab Platform Verification Suite.")
     p_ver.add_argument("-v", "--verbose", action="store_true", help="Verbose check & unittest output.")
     p_ver.add_argument("--json", action="store_true", help="Print full JSON scorecard.")
 
     sub.add_parser("demo", help="Run a readable walkthrough of one audit episode.")
 
-    p_gui = sub.add_parser("gui", help="Launch the local offline Web GUI dashboard.")
+    p_gui = sub.add_parser("gui", help="Launch the local offline AuditLab Web UI.")
     p_gui.add_argument("--host", default="127.0.0.1", help="Host interface to bind (default: 127.0.0.1).")
     p_gui.add_argument("--port", type=int, default=8765, help="Port to listen on (default: 8765).")
     p_gui.add_argument("--open", action="store_true", help="Open the dashboard in the default web browser.")
@@ -382,6 +443,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_generate_datasets(args)
     if args.command == "run-baselines":
         return cmd_run_baselines(args)
+    if args.command == "train":
+        return cmd_train(args)
     if args.command == "verify":
         return cmd_verify(args)
     if args.command == "demo":
