@@ -1,179 +1,192 @@
-# `audit-rl` — FinTech RL-среда для дообучения и оценки моделей финансового аудита
+# AuditLab
 
-**Genesis Hackathon — FinTech Track: «RL-среды для дообучения моделей финансового аудита»**
+**An autonomous financial audit simulation and AI training environment.**
 
-`audit-rl` — это детерминированная, верифицируемая RL-среда (Gymnasium-совместимый JSON-контракт) на **чистом Python 3.11+ stdlib** (ноль внешних runtime-зависимостей, 100% offline, CPU-only). Среда генерирует реалистичные синтетические бухгалтерские книги компаний с предпроверенными балансовыми инвариантами, внедряет причинно связанные финансовые расхождения и оценивает агентов в изолированном процессе по открытому 1-to-1 матчер-протоколу.
+**AuditLab** (`audit-rl`) is a deterministic, verifiable reinforcement learning (RL) environment and local research platform built on **pure Python 3.11+ standard library** (zero external runtime dependencies, 100% offline, CPU-only). It generates causally consistent double-entry synthetic company books with pre-verified accounting invariants, injects verifiable financial discrepancies, trains and benchmarks autonomous audit agents, and evaluates submissions in an isolated process using an open 1-to-1 bipartite matcher.
 
 ---
 
-## Ключевые особенности
+## Key Capabilities
 
-- **100% pure Python 3.11+ stdlib & Offline-Ready**: никаких сторонних библиотек, без сети и без GPU; работает в контейнере с лимитом 2 CPU / 4 GB RAM.
-- **Строгая изоляция оценивания**: `AuditEnv(mode="eval")` скрывает награду и эталон из `observation`/`info`, а `SubprocessAuditEnv` + `audit_rl/eval_worker.py` выносит оценивание, `truth.json`, `provenance.json` и `seed` в отдельный процесс (JSON-lines IPC).
-- **Причинная генерация + бухгалтерские инварианты**: чистая книга проходит проверку `sum(debit_minor) == sum(credit_minor)` до внедрения ошибок; включает реалистичные дистракторы (split payments, возвраты, регулярные платежи с одинаковыми суммами, мультивалютные проводки, пограничные timestamp).
-- **4 типа ошибок + 2 взаимодействующих сценария**:
+- **Zero External Runtime Dependencies & 100% Offline**: Pure Python 3.11+ stdlib (`decimal`, `ast`, `sqlite3`, `http.server`, `subprocess`, `unittest`); runs comfortably within `2 CPU / 4 GB RAM` and no GPU.
+- **Out-of-Process Evaluator Isolation**: `AuditEnv(mode="eval")` hides rewards and ground truth from `observation`/`info`, while `SubprocessAuditEnv` + `audit_rl/eval_worker.py` isolates `truth.json`, `provenance.json`, and `seed` in a separate process over JSON-lines IPC.
+- **Causal Synthetic Accounting & Pre-Injection Invariants**: Verifies double-entry balance (`sum(debit_minor) == sum(credit_minor)`) before injecting errors; includes 5 clean distractor classes (split payments, refunds/credit notes, legitimate recurring identical amounts, valid multi-currency conversions, valid boundary timestamps).
+- **4 Canonical Error Types + 2 Interacting Multi-Document Scenarios**:
   - `duplicate_invoice`
   - `payment_allocation_mismatch`
   - `fx_conversion_error`
   - `period_cutoff_error`
-  - Взаимодействующие: `fx_period_partial_payment` и `duplicate_invoice_fx_mismatch`.
-- **Узкий инструментальный интерфейс**: `list_records` (лимит 50/страницу), `get_record`, `get_document`, безопасный AST `Decimal` `calculator`, `submit` (бюджет 100 шагов).
-- **Открытый 1-to-1 двудольный матчер и устойчивая награда**: `R = clip(2 * F1 - 1.0 - 0.002 * inspection_steps, -1.0, 1.0)`, устойчивая к flag-everything спаму, дубликатам и ложным обвинениям на чистых книгах.
-- **Инвариантность к перестановкам и переименованию ID**: 20 парных проверок `permute_and_relabel_episode`.
+  - Interacting scenarios: `fx_period_partial_payment` and `duplicate_invoice_fx_mismatch`.
+- **Narrow 5-Tool Agent Interface & Safe AST `Decimal` Calculator**: `list_records` (`<= 50` rows/page), `get_record`, `get_document`, `calculator` (AST-only `Decimal`, no `eval()`), and `submit` within a 100-step budget.
+- **Evidence-First Auditing & Explainability**: Separates observed open records (`Observed:`), exact arithmetic (`Calculated:`), and policy rules (`Rule:`) with strict `acceptable_evidence_sets` verification.
+- **Pure-Stdlib RL Training & SQLite Persistence**: `audit_rl/trainer.py` trains `LearnableAuditPolicy` strictly on the `train` split using terminal rewards and persists runs/policy versions to `data/platform.db` (`audit_rl/storage.py`).
+- **8-Page Offline Web Application**: Local `ThreadingHTTPServer` dashboard (`python3 -m audit_rl gui`) with Dark/Light theme toggle and zero external CDNs.
 
 ---
 
-## Структура репозитория
+## Architecture Overview
+
+```text
+Web UI (8-page offline SPA) / CLI (audit_rl/cli.py)
+        │
+        ├── Policies & RL Trainer (policies.py, trainer.py)
+        ├── SQLite Persistence (storage.py -> data/platform.db)
+        └── JSON-lines IPC ──▶ SubprocessAuditEnv / eval_worker.py
+                                 ├── AuditEnv (train / eval)
+                                 ├── generator.py (open + private truth/provenance)
+                                 ├── calculator.py (safe AST Decimal)
+                                 └── matcher.py (Kuhn 1-to-1 + terminal reward)
+```
+
+For full architectural details, threat model disclosures, and ADRs, see [ARCHITECTURE.md](ARCHITECTURE.md), [DESIGN.md](DESIGN.md), and [DECISIONS.md](DECISIONS.md).
+
+---
+
+## Repository Structure
 
 ```text
 .
 ├── audit_rl/
-│   ├── __init__.py          # Публичный API пакета
-│   ├── __main__.py          # Entrypoint `python3 -m audit_rl`
-│   ├── schemas.py           # Константы, EpisodeConfig, валидация submit, сериализация
-│   ├── generator.py         # Причинный генератор, verify_episode_integrity, permute_and_relabel_episode
-│   ├── calculator.py        # Безопасный AST Decimal калькулятор (без eval)
-│   ├── matcher.py           # Нормализация, 1-to-1 двудольный матчер (Kuhn), терминальная награда
-│   ├── env.py               # AuditEnv (train/eval) и SubprocessAuditEnv (IPC-изоляция)
-│   ├── eval_worker.py       # Изолированный дочерний процесс оценщика
-│   ├── policies.py          # 4 бейзлайн-политики + запись траекторий
-│   └── cli.py               # Команды verify, generate-datasets, run-baselines, demo
+│   ├── __init__.py          # Public package exports
+│   ├── __main__.py          # CLI entrypoint (`python3 -m audit_rl`)
+│   ├── schemas.py           # Constants, EpisodeConfig, payload validation, serialization
+│   ├── generator.py         # Causal generator, verify_episode_integrity, permute_and_relabel_episode
+│   ├── calculator.py        # Safe AST Decimal calculator (no eval)
+│   ├── matcher.py           # Normalization, 1-to-1 Kuhn bipartite matcher, terminal reward
+│   ├── env.py               # AuditEnv (train/eval) & SubprocessAuditEnv (IPC)
+│   ├── eval_worker.py       # Out-of-process evaluator worker
+│   ├── policies.py          # Baseline policies + leak-free trajectory recording
+│   ├── trainer.py           # LearnableAuditPolicy & deterministic stdlib RL trainer
+│   ├── storage.py           # SQLite PlatformStore (data/platform.db)
+│   ├── rubric.py            # 100-point Platform Verification Suite
+│   ├── gui.py               # 8-page offline local Web Application
+│   └── cli.py               # CLI commands: verify, train, run-baselines, gui, demo, generate-datasets
 ├── configs/
-│   ├── train_configs.json   # 10 открытых train-эпизодов (seeds 1001..1010)
-│   ├── dev_configs.json     # 10 открытых dev-эпизодов (seeds 2001..2010)
-│   └── eval_configs.json    # 20 held-out eval-эпизодов (seeds 9001..9020)
-├── data/
-│   ├── train/               # Сгенерированные train-эпизоды
-│   └── dev/                 # Сгенерированные dev-эпизоды
-├── trajectories/
-│   └── trajectories.jsonl   # Записанные траектории без утечек truth/provenance/seed
-├── tests/                   # Полный набор unittest-тестов (pure stdlib)
-├── DESIGN.md                # Технический дизайн-документ
-├── DEMO.md                  # Пошаговый сценарий демонстрации и разбор эпизода
-├── Dockerfile               # Offline CPU-only образ на python:3.11-slim
-├── pyproject.toml           # PEP 621 метаданные и консольный скрипт `audit-rl`
-├── requirements.txt         # Зафиксированное отсутствие внешних runtime-зависимостей
-└── LICENSE                  # MIT License
+│   ├── train_configs.json   # 10 training episodes (seeds 1001..1010)
+│   ├── dev_configs.json     # 10 development episodes (seeds 2001..2010)
+│   ├── val_configs.json     # 10 validation episodes (distinct seeds)
+│   └── eval_configs.json    # 20 held-out eval episodes (seeds 9001..9020)
+├── data/                    # Generated open datasets & local SQLite store
+├── trajectories/            # Recorded leak-scanned trajectories (trajectories.jsonl)
+├── tests/                   # Pure-stdlib unittest suites
+├── .agents/skills/          # 8 custom engineering Agent Skills
+├── ARCHITECTURE.md          # System architecture & explainability layers
+├── DESIGN.md                # Technical design specification
+├── DEMO.md                  # Interactive walkthrough & episode trace
+├── DECISIONS.md             # Architecture Decision Records (ADRs)
+├── IMPLEMENTATION_PLAN.md   # Phased implementation roadmap
+├── PROJECT_STATUS.md        # Current engineering status & test metrics
+├── CONTRIBUTING.md          # Branching, PR checklist, and security rules
+├── Dockerfile               # Offline CPU-only container (python:3.11-slim)
+├── pyproject.toml           # PEP 621 metadata & `audit-rl` console script
+├── requirements.txt         # Zero external runtime dependencies note
+└── LICENSE                  # MIT License (2026)
 ```
 
 ---
 
-## Быстрый старт (Quickstart)
+## Quickstart & CLI Commands
 
-### 1. Полная проверка одной командой (Single-Command Verification)
-
+### 1. Single-Command Platform Verification
 ```bash
 python3 -m audit_rl verify
 ```
+Runs the complete verification pipeline: all pure-stdlib `unittest` suites, 20 held-out eval integrity checks, 20 paired permutation & ID-remapping checks, trajectory leak scan, and all baseline evaluations in `SubprocessAuditEnv(mode="eval")`.
 
-Команда автоматически выполняет:
-1. Полный набор unit- и integration-тестов (`python3 -m unittest discover -s tests -v`).
-2. Независимую проверку бухгалтерской и доказательной целостности (`verify_episode_integrity`) на 20 eval-эпизодах.
-3. 20 парных проверок инвариантности к перестановкам строк и переименованию ID (`permute_and_relabel_episode`).
-4. Сканирование `trajectories/trajectories.jsonl` на отсутствие утечек `truth`, `provenance`, `seed` и наличие обязательных полей.
-5. Прогон всех 4 бейзлайн-политик через изолированный `SubprocessAuditEnv(mode="eval")` на 20 eval-эпизодах с выводом сводной таблицы.
-
-### 2. Отдельные CLI-команды
-
+### 2. All CLI Commands
 ```bash
-# Сгенерировать открытые датасеты data/train/, data/dev/ и trajectories/trajectories.jsonl
-python3 -m audit_rl generate-datasets
+# Train LearnableAuditPolicy on train split (persists to data/platform.db)
+python3 -m audit_rl train --epochs 2 --seed 42
 
-# Запустить все 4 бейзлайн-политики на 20 held-out eval-эпизодах (в изолированном SubprocessAuditEnv)
+# Launch the 8-page offline Web Application (http://127.0.0.1:8765)
+python3 -m audit_rl gui --host 127.0.0.1 --port 8765
+
+# Run baseline benchmark suite on 20 held-out eval episodes
 python3 -m audit_rl run-baselines
 
-# Интерактивный текстовый разбор одного эпизода (reset -> tools -> calculator -> submit -> оценка)
+# Step-by-step CLI walkthrough of a single audit episode
 python3 -m audit_rl demo
 
-# Запуск только тестов
+# Regenerate open train/dev datasets and trajectories/trajectories.jsonl
+python3 -m audit_rl generate-datasets
+
+# Run pure-stdlib unit & integration tests directly
 python3 -m unittest discover -s tests -v
 ```
 
-### 3. Запуск в Docker (100% offline, 2 CPU / 4 GB RAM, без GPU)
-
+### 3. Offline Docker Execution (`2 CPU / 4 GB RAM`, No Network, No GPU)
 ```bash
-# Сборка образа
-docker build -t audit-rl:latest .
-
-# Запуск полной верификации без доступа к сети
-docker run --rm --network=none --cpus=2 --memory=4g audit-rl:latest
-
-# Запуск демонстрации эпизода в контейнере
-docker run --rm --network=none --cpus=2 --memory=4g audit-rl:latest python -m audit_rl demo
+docker build -t auditlab:latest .
+docker run --rm --network=none --cpus=2 --memory=4g auditlab:latest
+docker run --rm --network=none --cpus=2 --memory=4g auditlab:latest python -m audit_rl demo
 ```
 
 ---
 
-## Формат датасетов и траекторий
+## 8-Page Offline Web Application (`python3 -m audit_rl gui`)
 
-### Открытые данные эпизода (`data/train/<episode_id>/`, `data/dev/<episode_id>/`)
-- `manifest.json` — параметры периода (`period_start`, `period_end`, `timezone_offset`), `base_currency`, `currencies`, `schema_version`.
-- `policy.json` — учетная политика (`fx_date_policy`, `rounding_rule`).
-- `ledger.csv` — главная книга (`row_id,timestamp,account,debit_minor,credit_minor,currency,entity_id,invoice_id,payment_id`).
-- `invoices.jsonl` — инвойсы с построчной детализацией `line_items` и `service_date`.
-- `payments.jsonl` — платежи с распределением `invoice_refs` (или явным `null`).
-- `fx.csv` — таблица валютных курсов (`date,source_currency,target_currency,rate` как десятичная строка).
-
-### Траектории (`trajectories/trajectories.jsonl`)
-Каждая строка — JSON-объект одного шага эпизода:
-```json
-{
-  "episode_id": "ep_...",
-  "policy": "SimpleReconciliationPolicy",
-  "step": 1,
-  "action": {"action": "list_records", "table": "invoices", "cursor": "0", "limit": 50},
-  "observation": {"records": [...], "next_cursor": null, "budget_remaining": 99},
-  "reward": 0.0,
-  "terminated": false,
-  "truncated": false
-}
-```
-Траектории проходят автоматический leak-scan: в них гарантированно отсутствуют `truth`, `provenance`, `seed` и локальные пути файловой системы.
+1. **Overview**: Dataset totals across `train`/`dev`/`val`/`eval`, persisted benchmark & training metrics from `PlatformStore`, recent experiments, and live system status.
+2. **Company Explorer**: Browse any episode's company profile, reporting period, accounting policy, and searchable paginated tables (`invoices`, `payments`, `ledger`, `fx`).
+3. **Agent Workspace**: Interactive manual investigation tools (`list_records`, `get_record`, `get_document`, safe AST `calculator`, `submit`) or one-click autonomous policy run with step-budget tracking.
+4. **Evaluation Results**: Submitted findings, TP/FP/FN breakdown, clickable Evidence ID lookup drawer (`Observed:` / `Calculated:` / `Rule:`), and the 100-point Platform Verification Suite.
+5. **Training**: Launch deterministic RL training runs, inspect persisted policy versions, view the real SVG reward curve, and compare `Untrained` vs `Trained` vs `Rule-Based` held-out F1/Return.
+6. **Benchmarks**: Multi-policy comparison across held-out `eval` episodes with per-category breakdown (`clean`, `single`, `multi`, `interacting`), SVG grouped bar chart, and 20-episode heatmap.
+7. **Trajectory Explorer**: Inspect real recorded episodes from `trajectories/trajectories.jsonl` (and live runs) with a step-by-step replay scrubber and JSONL export.
+8. **Settings**: Inspect active environment constants (`DEFAULT_MAX_STEPS=100`, `MAX_PAGE_LIMIT=50`, `MAX_FINDINGS=30`, `SCHEMA_VERSION`), dataset split counts, and isolation configuration.
 
 ---
 
-## Результаты верификации и бейзлайнов на 20 Held-Out Eval-эпизодах
+## Dataset Splits & Trajectory Format
 
-Полный прогон `python3 -m audit_rl verify` завершается со статусом **Overall PASS (2.74 s)**:
-- **Unit & Integration Tests** (`python3 -m unittest discover -s tests -v`): **61 / 61 OK (1.22 s)**
-- **Eval Integrity Checks**: **20 / 20 PASS** (баланс до инъекции + независимый пересчет каждого расхождения из открытых данных)
-- **Permutation & ID-Remapping Invariance**: **20 / 20 PASS** (перестановка строк и переименование всех ID дают идентичный `Oracle F1 = 1.0`, `Return = 1.0`)
-- **Trajectory Leak Scan**: **PASS** (`trajectories/trajectories.jsonl`: 30 прогонов, 341 шаг, **0 утечек** `truth`/`provenance`/`seed`)
+| Split | Config | Episodes | Purpose |
+|---|---|---:|---|
+| `train` | [configs/train_configs.json](configs/train_configs.json) | 10 | Policy training & RL reward optimization |
+| `dev` | [configs/dev_configs.json](configs/dev_configs.json) | 10 | Local development & debugging |
+| `val` | [configs/val_configs.json](configs/val_configs.json) | 10 | Validation & hyperparameter checks |
+| `eval` | [configs/eval_configs.json](configs/eval_configs.json) | 20 | Strictly held-out evaluation (5 clean, 5 interacting, 10 single/multi-error) |
 
-Оценка 4 бейзлайнов в изолированном `SubprocessAuditEnv(mode="eval")` по конфигу [configs/eval_configs.json](configs/eval_configs.json) (20 эпизодов: 5 чистых, 5 со взаимодействующими ошибками, 10 с одиночными/множественными ошибками):
+Recorded trajectories in `trajectories/trajectories.jsonl` store one JSON object per step (`episode_id`, `policy`, `step`, `action`, `observation`, `reward`, `terminated`, `truncated`) and are scanned to guarantee **0 leaks** of `truth`, `provenance`, `seed`, or local filesystem paths.
+
+---
+
+## Measured Verification & Benchmark Results
+
+Verified via `python3 -m audit_rl verify` (**Overall PASS in 2.74 s**):
+- **Core Unit & Integration Tests**: **61 / 61 OK (1.22 s)** (extended with `test_training_and_storage.py` and `test_branding_and_security.py`).
+- **Eval Integrity Checks**: **20 / 20 PASS** (`verify_episode_integrity`).
+- **Permutation & ID-Remapping Invariance**: **20 / 20 PASS** (`permute_and_relabel_episode`, `Oracle F1 = 1.0`, `Return = 1.0`).
+- **Trajectory Leak Scan**: **PASS** (`trajectories/trajectories.jsonl`: 30 runs, 341 steps, **0 leaks**).
+
+Measured baselines on 20 held-out `eval` episodes (`SubprocessAuditEnv`, `mode="eval"`):
 
 | Policy | Mean Precision | Mean Recall | Mean F1 | Mean Return | Mean Steps | Mean Runtime (ms) |
 |---|---:|---:|---:|---:|---:|---:|
-| `OraclePolicy` (`oracle`, evaluator-only ceiling) | `1.0000` | `1.0000` | `1.0000` | `+1.0000` | `1.00` | `0.14` |
-| `SimpleReconciliationPolicy` (`simple_reconciliation`) | `1.0000` | `1.0000` | `1.0000` | `+0.9676` | `17.20` | `4.98` |
-| `RandomExplorerPolicy` (`random_explorer`) | `0.1000` | `0.1000` | `0.1000` | `-0.8019` | `12.60` | `1.78` |
-| `FlagEverythingAttackPolicy` (`flag_everything_attack`) | `0.0017` | `0.0250` | `0.0031` | `-0.9940` | `4.00` | `1.71` |
-
-### Краткий анализ провалов и успехов (Measured Failure Analysis)
-- **`FlagEverythingAttackPolicy` (`F1 = 0.0031`, `Return = -0.9940`)**: массовая подача до 30 гипотетических находок на эпизод уничтожает `Precision` (`0.0017`), не удовлетворяет строгим проверкам `affected_ids`, точной суммы в `minor` и подмножества доказательств `acceptable_evidence_sets`, а на 5 чистых книгах получает штраф `-1.0`. Это подтверждает устойчивость награды к specification gaming.
-- **`RandomExplorerPolicy` (`F1 = 0.1000`, `Return = -0.8019`)**: случайное исследование набирает `F1 = 1.0` только тогда, когда случайно отправляет пустой отчет на чистой книге; на всех ошибочных книгах (и при случайных ложных обвинениях) не находит корректных пар доказательств и расхождений.
-- **`SimpleReconciliationPolicy` (`F1 = 1.0000`, `Return = +0.9676`, `17.20 steps`)**: последовательно пагинирует открытые таблицы через узкий инструментальный интерфейс, проверяет 4 класса расхождений и формирует минимальные валидные `evidence_ids`, не попадаясь на чистые дистракторы. Разница с `OraclePolicy` (`+0.9676` против `+1.0000`) в точности отражает штраф экономии шагов (`0.002 * 16.2 ≈ 0.0324` за ~16.2 шагов инспекции).
-- **`OraclePolicy` (`F1 = 1.0000`, `Return = +1.0000`, `1.00 step`)**: подтверждает достижимость верхней границы награды при 0 шагах инспекции и корректность 1-to-1 матчера.
-
-> **Честные ограничения:** синтетический скоуп (4 класса расхождений и 2 взаимодействующих сценария), не заменяет профессиональный аудит, `SimpleReconciliationPolicy` — конечный rule-based бейзлайн под известную схему таблиц, реальные финансовые данные и PII не используются. Подробнее — в [DESIGN.md](DESIGN.md).
+| `oracle` (evaluator-only ceiling) | `1.0000` | `1.0000` | `1.0000` | `+1.0000` | `1.00` | `0.14` |
+| `simple_reconciliation` (rule-based) | `1.0000` | `1.0000` | `1.0000` | `+0.9676` | `17.20` | `4.98` |
+| `random_explorer` | `0.1000` | `0.1000` | `0.1000` | `-0.8019` | `12.60` | `1.78` |
+| `flag_everything_attack` (adversarial) | `0.0017` | `0.0250` | `0.0031` | `-0.9940` | `4.00` | `1.71` |
 
 ---
 
-## Соответствие критериям оценки (Rubric Mapping)
+## Failure Analysis & Honest Limitations
 
-| Критерий | Реализация в `audit-rl` |
-|---|---|
-| **Контракт RL-среды и изоляция** | `AuditEnv` (`train`/`eval`) + межпроцессная изоляция `SubprocessAuditEnv` / `eval_worker.py`; 5 узких инструментов, пагинация ≤ 50, бюджет 100 шагов, безопасный AST Decimal калькулятор (`tests/test_env_contract_and_isolation.py`). |
-| **Процедурный генератор и бухгалтерские инварианты** | Детерминированный генератор (`random.Random(seed)`), проверка баланса до инъекции ошибок, 4 типа ошибок, 2 взаимодействующих сценария, 5 классов чистых дистракторов, `verify_episode_integrity` (`tests/test_generator_and_invariants.py`). |
-| **Открытый матчер и устойчивость награды** | 1-to-1 двудольное паросочетание (Kuhn), проверка доказательств по подмножеству, допуски, штрафы за спам/дубликаты/невалидную схему, корректное молчание на чистых книгах (`tests/test_matcher_and_reward.py`). |
-| **Воспроизводимость и инвариантность** | Побитовая воспроизводимость `(seed, config, actions)` и 20 парных проверок перестановки строк и переименования всех ID (`tests/test_reproducibility_and_permutation.py`). |
-| **Бейзлайны, датасеты и траектории** | 4 политики (`Oracle`, `SimpleReconciliation`, `RandomExplorer`, `FlagEverythingAttack`), версионированные конфиги `train`/`dev`/`eval`, leak-free `trajectories/trajectories.jsonl` (`tests/test_policies_and_trajectories.py`). |
-| **Упаковка, документация и воспроизводимый запуск** | Zero-deps Python 3.11+ stdlib, offline `Dockerfile`, единая команда `python3 -m audit_rl verify`, [DESIGN.md](DESIGN.md) и [DEMO.md](DEMO.md). |
+| Failure Mode / Limitation | Measured Behavior / Root Cause | Mitigation & Scope Note |
+|---|---|---|
+| **Specification gaming (`flag_everything_attack`)** | `P = 0.0017`, `F1 = 0.0031`, `Return = -0.9940` | 1-to-1 Kuhn matcher + strict `acceptable_evidence_sets` + clean-book penalty (`-1.0`) neutralize spam attacks. |
+| **Untrained / random exploration (`random_explorer`)** | `F1 = 0.1000`, `Return = -0.8019` | Only scores when randomly submitting empty findings on clean books; cannot reconcile cross-table records. |
+| **Step-budget trade-off (`simple_reconciliation`)** | `F1 = 1.0000`, `Return = +0.9676` (`17.20 steps`) | `-0.0324` gap vs `oracle` reflects the step-economy penalty `0.002 * inspection_steps`. |
+| **Synthetic accounting scope** | Covers 4 error classes & 2 interacting scenarios | Research simulation only; not full IFRS/GAAP and not professional audit advice. |
+| **Process isolation boundary** | `SubprocessAuditEnv` isolates Python memory/API state | Not an OS-level kernel/seccomp sandbox for untrusted native binaries; use containers for hostile code. |
 
 ---
 
-## Документация и лицензия
+## Documentation & License
 
-- Подробная архитектура, математика награды и ограничения: [DESIGN.md](DESIGN.md)
-- Пошаговая демонстрация и разбор эпизода: [DEMO.md](DEMO.md)
-- Лицензия: [LICENSE](LICENSE) (MIT, 2026).
+- [ARCHITECTURE.md](ARCHITECTURE.md) — System architecture, data model, and explainability layers
+- [DESIGN.md](DESIGN.md) — Detailed technical specification
+- [DEMO.md](DEMO.md) — Step-by-step walkthrough & sample episode trace
+- [DECISIONS.md](DECISIONS.md) — Architecture Decision Records (ADRs)
+- [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — Phased roadmap
+- [PROJECT_STATUS.md](PROJECT_STATUS.md) — Engineering status & resume commands
+- [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution & security guidelines
+- [LICENSE](LICENSE) — MIT License (2026)

@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "audit-rl"
 version = "1.0.0"
-description = "Verifiable, deterministic FinTech RL environment for training and evaluating financial audit agents (pure Python stdlib, offline-capable)"
+description = "AuditLab — An autonomous financial audit simulation and AI training environment (pure Python stdlib, offline-capable)"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [
-  { name = "Genesis Hackathon FinTech RL Audit Team" }
+  { name = "AuditLab Contributors" }
 ]
 keywords = [
   "reinforcement-learning",
