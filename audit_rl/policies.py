@@ -601,8 +601,10 @@ class SimpleReconciliationPolicy(BasePolicy):
                         "currency": str(dup["currency"]),
                         "evidence_ids": ev_ids[:MAX_EVIDENCE_PER_FINDING],
                         "explanation": (
-                            f"Duplicate invoice {dup_id} matches {orig_id} "
-                            f"(same entity, service_date, line items, and total {dup['total_minor']} {dup['currency']})."
+                            f"Observed: {orig_id} ({orig.get('doc_id')}) and {dup_id} ({dup.get('doc_id')}) "
+                            f"share entity {dup.get('entity_id')}, line items, and total {dup['total_minor']} {dup['currency']}. "
+                            f"Calculated: duplicate overstatement = {int(dup['total_minor'])} {dup['currency']}. "
+                            f"Rule: single-posting uniqueness per invoice service event. Strength: confirmed."
                         )[:MAX_EXPLANATION_CHARS],
                     }
                 )
@@ -629,7 +631,11 @@ class SimpleReconciliationPolicy(BasePolicy):
                             "claimed_amount_minor": abs(amount_minor),
                             "currency": currency,
                             "evidence_ids": ev_ids[:MAX_EVIDENCE_PER_FINDING],
-                            "explanation": f"Payment {pay_id} has unallocated amount {abs(amount_minor)} {currency} (invoice_refs is null/empty)."[:MAX_EXPLANATION_CHARS],
+                            "explanation": (
+                                f"Observed: payment {pay_id} ({pay_doc_id}) amount={amount_minor} {currency} has null/empty invoice_refs. "
+                                f"Calculated: unallocated = |{amount_minor} - 0| = {abs(amount_minor)} {currency}. "
+                                f"Rule: every cash settlement must reconcile to allocated invoice references. Strength: confirmed."
+                            )[:MAX_EXPLANATION_CHARS],
                         }
                     )
             elif isinstance(refs, list):
@@ -654,8 +660,10 @@ class SimpleReconciliationPolicy(BasePolicy):
                             "currency": currency,
                             "evidence_ids": ev_ids[:MAX_EVIDENCE_PER_FINDING],
                             "explanation": (
-                                f"Payment {pay_id} amount {amount_minor} {currency} does not match "
-                                f"allocated sum {alloc_sum} (difference {diff})."
+                                f"Observed: payment {pay_id} ({pay_doc_id}) amount={amount_minor} {currency}, "
+                                f"allocated refs={ref_inv_ids} sum={alloc_sum}. "
+                                f"Calculated: |{amount_minor} - {alloc_sum}| = {diff} {currency}. "
+                                f"Rule: sum(invoice_refs.allocated_minor) must equal payment amount_minor. Strength: confirmed."
                             )[:MAX_EXPLANATION_CHARS],
                         }
                     )
@@ -710,8 +718,10 @@ class SimpleReconciliationPolicy(BasePolicy):
                         "currency": base_currency,
                         "evidence_ids": ev_ids[:MAX_EVIDENCE_PER_FINDING],
                         "explanation": (
-                            f"Invoice {inv_id} ({total_minor} {inv_cur}) posted as {posted_base_minor} {base_currency} "
-                            f"vs expected {expected_base_minor} {base_currency} using {fx_key} (diff {diff})."
+                            f"Observed: invoice {inv_id} ({total_minor} {inv_cur}) posted in {primary_row.get('row_id')} as "
+                            f"{posted_base_minor} {base_currency}; FX {fx_key} rate={rate_str} ({rounding_rule}). "
+                            f"Calculated: expected={expected_base_minor}, |{posted_base_minor} - {expected_base_minor}| = {diff} {base_currency}. "
+                            f"Rule: foreign invoices must convert at policy fx_date_policy={fx_date_policy}. Strength: confirmed."
                         )[:MAX_EXPLANATION_CHARS],
                     }
                 )
@@ -780,9 +790,10 @@ class SimpleReconciliationPolicy(BasePolicy):
                             "currency": str(inv.get("currency", base_currency)),
                             "evidence_ids": ev_ids[:MAX_EVIDENCE_PER_FINDING],
                             "explanation": (
-                                f"Invoice {inv_id} service_date {service_dates[0].isoformat()} "
-                                f"conflicts with ledger posting timestamp {cutoff_row.get('timestamp')} "
-                                f"for period {p_start_date.isoformat()}..{p_end_date.isoformat()}."
+                                f"Observed: invoice {inv_id} ({inv.get('doc_id')}) service_date={service_dates[0].isoformat()} "
+                                f"posted in {cutoff_row.get('row_id')} at {cutoff_row.get('timestamp')}. "
+                                f"Calculated: period window [{p_start_date.isoformat()}, {p_end_date.isoformat()}], misstated={total_minor} {inv.get('currency', base_currency)}. "
+                                f"Rule: accrual cutoff requires recognition in the service period. Strength: confirmed."
                             )[:MAX_EXPLANATION_CHARS],
                         }
                     )
@@ -802,6 +813,95 @@ class SimpleReconciliationPolicy(BasePolicy):
                 unique_findings.append(f)
 
         return unique_findings[:MAX_FINDINGS]
+
+
+DEFAULT_UNTRAINED_PARAMS: dict[str, Any] = {
+    "check_duplicate": False,
+    "check_payment": False,
+    "check_fx": False,
+    "check_cutoff": False,
+    "fx_tolerance_threshold": 50000,
+    "submit_confidence_threshold": 0.95,
+    "max_pages_per_table": 1,
+    "use_calculator": False,
+}
+
+
+class LearnableAuditPolicy(SimpleReconciliationPolicy):
+    """Deterministic parameterized RL audit policy optimized strictly from terminal rewards.
+
+    Starts with uncalibrated conservative parameters (low untrained F1/return) and is tuned
+    exclusively on training episodes using terminal reward signals without accessing truth.
+    """
+
+    name: str = "learnable_audit"
+
+    def __init__(
+        self,
+        params: dict[str, Any] | None = None,
+        version: str = "untrained-0.1.0",
+    ) -> None:
+        merged = dict(DEFAULT_UNTRAINED_PARAMS)
+        if params:
+            merged.update(params)
+        self.params: dict[str, Any] = merged
+        self.version: str = str(version)
+        super().__init__(use_calculator=bool(self.params.get("use_calculator", False)))
+        self._pages_fetched: dict[str, int] = {}
+
+    def get_params(self) -> dict[str, Any]:
+        return dict(self.params)
+
+    def set_params(self, params: dict[str, Any], version: str | None = None) -> None:
+        self.params = dict(params)
+        self.use_calculator = bool(self.params.get("use_calculator", False))
+        if version is not None:
+            self.version = str(version)
+
+    def reset(self, obs: dict[str, Any], info: dict[str, Any] | None = None) -> None:
+        self.use_calculator = bool(self.params.get("use_calculator", False))
+        super().reset(obs, info)
+        self._pages_fetched = {t: 0 for t in self._tables_order}
+
+    def _ingest_page(self, obs: dict[str, Any]) -> None:
+        if self._active_table is None:
+            return
+        table = self._active_table
+        items = _extract_items(obs)
+        self._data[table].extend(items)
+        self._pages_fetched[table] = self._pages_fetched.get(table, 0) + 1
+        max_pages = max(1, int(self.params.get("max_pages_per_table", 1)))
+        next_cursor = _extract_next_cursor(obs)
+        if next_cursor is not None and len(items) > 0 and self._pages_fetched[table] < max_pages:
+            self._cursor = str(next_cursor)
+        else:
+            self._table_idx += 1
+            self._cursor = "0"
+            self._active_table = None
+
+    def _reconcile(self) -> list[dict[str, Any]]:
+        candidates = super()._reconcile()
+        conf_threshold = float(self.params.get("submit_confidence_threshold", 0.95))
+        fx_tol = int(self.params.get("fx_tolerance_threshold", 50000))
+        enabled_map = {
+            "duplicate_invoice": bool(self.params.get("check_duplicate", False)),
+            "payment_allocation_mismatch": bool(self.params.get("check_payment", False)),
+            "fx_conversion_error": bool(self.params.get("check_fx", False)),
+            "period_cutoff_error": bool(self.params.get("check_cutoff", False)),
+        }
+        filtered: list[dict[str, Any]] = []
+        for cand in candidates:
+            ftype = str(cand.get("type", ""))
+            if not enabled_map.get(ftype, False):
+                continue
+            if ftype == "fx_conversion_error" and int(cand.get("claimed_amount_minor", 0)) <= fx_tol:
+                continue
+            # Confirmed deterministic open-record detections carry 0.85 confidence
+            confidence = 0.85
+            if confidence < conf_threshold:
+                continue
+            filtered.append(cand)
+        return filtered[:MAX_FINDINGS]
 
 
 class OraclePolicy(BasePolicy):

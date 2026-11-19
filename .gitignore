@@ -44,4 +44,9 @@ env/
 *.swp
 *.swo
 
-# Note: configs/, data/, and trajectories/trajectories.jsonl are intentionally tracked.
+# Runtime SQLite database (auto-created locally)
+data/platform.db
+data/platform.db-wal
+data/platform.db-shm
+
+# Note: configs/, data/train/, data/dev/, and trajectories/trajectories.jsonl are intentionally tracked.
