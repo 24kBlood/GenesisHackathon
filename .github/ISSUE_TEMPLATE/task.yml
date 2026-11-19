@@ -1,0 +1,28 @@
+name: Задача
+description: Запланировать один проверяемый инкремент
+title: "[TASK] "
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Контекст и пункт ТЗ
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Файлы и границы изменения
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Критерии приёмки и тесты
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Зависимости и условие завершения
+    validations:
+      required: true
