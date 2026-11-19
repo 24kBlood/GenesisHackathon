@@ -1,9 +1,0 @@
-# Runtime dependencies: NONE (100% pure Python 3.11+ standard library, offline-ready).
-#
-# All core components (procedural generator, accounting invariants, AST Decimal calculator,
-# 1-to-1 bipartite matcher, Gymnasium-compatible AuditEnv, SubprocessAuditEnv out-of-process
-# isolation, baseline policies, CLI, and unittest verification suite) run with zero external
-# packages and require no network access or GPU.
-#
-# Optional dev/test tools (not required to run `python3 -m unittest` or `python3 -m audit_rl verify`):
-# pytest==8.3.4
