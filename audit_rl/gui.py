@@ -734,6 +734,7 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
   /* Tables */
   .table-wrap {
     overflow-x: auto;
+    max-width: 100%;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--bg-elev);
@@ -763,7 +764,8 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
   tr:last-child td { border-bottom: none; }
   tbody tr:hover td { background: rgba(56, 189, 248, 0.04); }
   .mono { font-family: var(--font-mono); }
-  .num { font-family: var(--font-mono); text-align: right; }
+  .num { font-family: var(--font-mono); text-align: right; white-space: nowrap; }
+  .col-nowrap { white-space: nowrap; }
 
   .tag-list { display: flex; flex-wrap: wrap; gap: 4px; }
   .tag {
@@ -775,6 +777,98 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
     background: rgba(148, 163, 184, 0.12);
     color: var(--text);
     border: 1px solid var(--border);
+  }
+  .null-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    background: rgba(100, 116, 139, 0.12);
+    border: 1px dashed rgba(148, 163, 184, 0.22);
+  }
+
+  /* Line Items & Invoice Refs Cells */
+  .col-line-items {
+    white-space: normal;
+    min-width: 260px;
+    max-width: 420px;
+  }
+  .line-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .line-item-card {
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 9px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .line-item-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .line-item-desc {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 12px;
+    color: #f1f5f9;
+    word-break: break-word;
+  }
+  .line-item-date {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    white-space: nowrap;
+  }
+  .line-item-math {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .line-item-math strong {
+    color: var(--emerald);
+    font-weight: 600;
+  }
+
+  .col-refs {
+    white-space: normal;
+    min-width: 180px;
+    max-width: 340px;
+  }
+  .ref-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.26);
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .ref-chip-id {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .ref-chip-amt {
+    color: var(--emerald);
   }
 
   /* Trajectory Accordion */
@@ -1484,6 +1578,57 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
     }
   }
 
+  const NOWRAP_COLS = new Set([
+    "doc_id", "invoice_id", "payment_id", "row_id", "entity_id",
+    "issued_at", "due_at", "timestamp", "date",
+    "currency", "source_currency", "target_currency",
+    "total_minor", "amount_minor", "debit_minor", "credit_minor", "rate"
+  ]);
+
+  function renderLineItemsCell(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return `<td class="col-line-items"><span class="null-badge">none</span></td>`;
+    }
+    const cards = items.map((it) => {
+      const desc = esc(it.description ?? "Item");
+      const qty = esc(it.quantity ?? 1);
+      const unit = esc(it.unit_price_minor ?? 0);
+      const amt = esc(it.amount_minor ?? 0);
+      const sdate = it.service_date ? `<span class="line-item-date">${esc(it.service_date)}</span>` : "";
+      return `
+        <div class="line-item-card">
+          <div class="line-item-top">
+            <span class="line-item-desc">${desc}</span>
+            ${sdate}
+          </div>
+          <div class="line-item-math">${qty} &times; ${unit} = <strong>${amt}</strong></div>
+        </div>
+      `;
+    }).join("");
+    return `<td class="col-line-items"><div class="line-items-list">${cards}</div></td>`;
+  }
+
+  function renderInvoiceRefsCell(refs) {
+    if (!Array.isArray(refs) || refs.length === 0) {
+      return `<td class="col-refs"><span class="null-badge">null</span></td>`;
+    }
+    const chips = refs.map((ref) => {
+      if (ref === null || ref === undefined) {
+        return `<span class="null-badge">null</span>`;
+      }
+      if (typeof ref === "string") {
+        return `<span class="ref-chip"><span class="ref-chip-id">${esc(ref)}</span></span>`;
+      }
+      const invId = ref.invoice_id;
+      const alloc = ref.allocated_minor ?? ref.amount_minor;
+      if (invId === null || invId === undefined || invId === "") {
+        return `<span class="null-badge">null${alloc !== undefined ? `: ${esc(alloc)}` : ""}</span>`;
+      }
+      return `<span class="ref-chip"><span class="ref-chip-id">${esc(invId)}</span>${alloc !== undefined ? `: <span class="ref-chip-amt">${esc(alloc)}</span>` : ""}</span>`;
+    }).join("");
+    return `<td class="col-refs"><div class="tag-list">${chips}</div></td>`;
+  }
+
   function renderInspectorTable(records) {
     const wrap = $("ins-table-wrap");
     if (!records.length) {
@@ -1500,10 +1645,13 @@ _DASHBOARD_HTML = r"""<!DOCTYPE html>
     const tbody = records.map((r) => {
       return `<tr>${cols.map((c) => {
         const v = r[c];
-        if (v === null || v === undefined) return `<td class="mono" style="color:var(--text-dim);">null</td>`;
-        if (typeof v === "object") return `<td class="mono">${esc(JSON.stringify(v))}</td>`;
-        if (typeof v === "number") return `<td class="num">${esc(v)}</td>`;
-        return `<td class="mono">${esc(v)}</td>`;
+        if (c === "line_items") return renderLineItemsCell(v);
+        if (c === "invoice_refs") return renderInvoiceRefsCell(v);
+        const nowrap = NOWRAP_COLS.has(c) ? " col-nowrap" : "";
+        if (v === null || v === undefined) return `<td class="mono${nowrap}"><span class="null-badge">null</span></td>`;
+        if (typeof v === "object") return `<td class="mono" style="white-space:normal; word-break:break-word;">${esc(JSON.stringify(v))}</td>`;
+        if (typeof v === "number") return `<td class="num${nowrap}">${esc(v)}</td>`;
+        return `<td class="mono${nowrap}">${esc(v)}</td>`;
       }).join("")}</tr>`;
     }).join("");
     wrap.innerHTML = `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
