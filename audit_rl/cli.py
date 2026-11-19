@@ -228,129 +228,45 @@ def cmd_run_baselines(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
+    from audit_rl.rubric import run_full_rubric_verification
+
     root = Path(args.root).resolve() if args.root else _repo_root()
-    t0 = time.perf_counter()
-    checks: list[tuple[str, bool, str]] = []
-
-    # 1. Unit & integration tests
-    tests_dir = root / "tests"
-    if tests_dir.exists() and any(tests_dir.glob("test_*.py")):
-        loader = unittest.defaultTestLoader
-        suite = loader.discover(start_dir=str(tests_dir), top_level_dir=str(root))
-        runner = unittest.TextTestRunner(verbosity=1 if args.verbose else 0)
-        test_result = runner.run(suite)
-        tests_ok = test_result.wasSuccessful() and test_result.testsRun > 0
-        checks.append(
-            (
-                "Unit & Integration Tests",
-                tests_ok,
-                f"{test_result.testsRun} run, {len(test_result.failures)} failures, {len(test_result.errors)} errors",
-            )
-        )
-    else:
-        checks.append(("Unit & Integration Tests", False, "No tests found in tests/"))
-
-    # 2. Independent integrity checks on 20 eval episodes
-    eval_cfg_path = root / "configs" / "eval_configs.json"
-    eval_spec = _load_config_file(eval_cfg_path)
-    eval_episodes = []
-    integrity_failures = 0
-    for ep_spec in eval_spec["episodes"]:
-        ep = generate_episode(seed=int(ep_spec["seed"]), config=EpisodeConfig.from_dict(ep_spec["config"]))
-        eval_episodes.append((int(ep_spec["seed"]), ep))
-        res = verify_episode_integrity(ep)
-        if not res.get("ok", res.get("passed", False)):
-            integrity_failures += 1
-    checks.append(
-        (
-            "Eval Episode Integrity (20 episodes)",
-            integrity_failures == 0 and len(eval_episodes) == 20,
-            f"{len(eval_episodes) - integrity_failures}/{len(eval_episodes)} passed",
-        )
+    report = run_full_rubric_verification(
+        run_unittests=True,
+        root=root,
+        verbose_tests=bool(args.verbose),
     )
 
-    # 3. 20 paired permutation & ID-remapping checks
-    perm_passed = 0
-    for idx, (seed, ep) in enumerate(eval_episodes):
-        remapped, id_map = permute_and_relabel_episode(ep, perm_seed=seed + 50000 + idx)
-        remapped_integrity = verify_episode_integrity(remapped)
-        env_orig = AuditEnv(mode="train")
-        orig_res = run_policy_on_env(OraclePolicy(ep.truth), env_orig, seed=seed, episode=ep, record_trajectory=False)
-        env_perm = AuditEnv(mode="train")
-        perm_res = run_policy_on_env(
-            OraclePolicy(remapped.truth), env_perm, seed=seed, episode=remapped, record_trajectory=False
-        )
-        ok = (
-            remapped_integrity.get("ok", remapped_integrity.get("passed", False))
-            and bool(id_map)
-            and remapped.manifest["episode_id"] != ep.manifest["episode_id"]
-            and orig_res["metrics"].get("f1") == 1.0
-            and perm_res["metrics"].get("f1") == 1.0
-            and orig_res["reward"] == 1.0
-            and perm_res["reward"] == 1.0
-        )
-        if ok:
-            perm_passed += 1
-    checks.append(
-        (
-            "Permutation & ID-Remapping Invariance (20 pairs)",
-            perm_passed == len(eval_episodes) and len(eval_episodes) == 20,
-            f"{perm_passed}/{len(eval_episodes)} passed",
-        )
-    )
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2))
+        return 0 if report["overall_pass"] else 1
 
-    # 4. Trajectories leak scan (generate datasets if trajectories file missing)
-    traj_path = root / "trajectories" / "trajectories.jsonl"
-    if not traj_path.exists():
-        gen_ns = argparse.Namespace(root=str(root))
-        cmd_generate_datasets(gen_ns)
-    leak_res = scan_trajectories_for_leaks(traj_path)
-    checks.append(
-        (
-            "Trajectory Leak Scan",
-            bool(leak_res["passed"]),
-            f"{leak_res['lines']} lines scanned, {len(leak_res['errors'])} errors",
+    print("\n=== Audit RL 100-Point Rubric Verification Scorecard ===")
+    ut = report["unittest"]
+    ut_status = "PASS" if ut["passed"] else "FAIL"
+    print(f"[{ut_status}] Unit & Integration Tests: {ut['ran']} run, {ut['failures']} failures, {ut['errors']} errors")
+    print()
+    print(f"{'Category':<34} | {'Checks':>8} | {'Score':>12} | {'Status':>6}")
+    print("-" * 70)
+    for cat in report["categories"]:
+        status = "PASS" if cat["passed"] == cat["total"] else "FAIL"
+        print(
+            f"{cat['name']:<34} | {cat['passed']:>3}/{cat['total']:<4} | "
+            f"{cat['score']:>5.1f}/{cat['max_score']:<6.1f} | {status:>6}"
         )
-    )
+        if args.verbose or status == "FAIL":
+            for chk in cat["checks"]:
+                cst = "PASS" if chk["passed"] else "FAIL"
+                print(f"    [{cst}] {chk['name']}: {chk['detail']}")
 
-    # 5. All 4 baselines on 20 eval episodes via SubprocessAuditEnv (eval mode)
-    baseline_res = evaluate_baselines(eval_cfg_path)
-    summary = baseline_res["summary"]
-    oracle_ok = summary["oracle"]["f1"] == 1.0 and summary["oracle"]["return"] == 1.0
-    simple_beats_random = (
-        summary["simple_reconciliation"]["f1"] > summary["random_explorer"]["f1"]
-        and summary["simple_reconciliation"]["return"] > summary["random_explorer"]["return"]
-    )
-    simple_beats_attack = (
-        summary["simple_reconciliation"]["f1"] > summary["flag_everything_attack"]["f1"]
-        and summary["simple_reconciliation"]["return"] > summary["flag_everything_attack"]["return"]
-    )
-    attack_penalized = summary["flag_everything_attack"]["return"] < 0.0
-    baselines_ok = oracle_ok and simple_beats_random and simple_beats_attack and attack_penalized
-    checks.append(
-        (
-            "4 Baselines + Subprocess Isolation (20 eval episodes)",
-            baselines_ok,
-            (
-                f"oracle_F1={summary['oracle']['f1']:.4f}, "
-                f"simple_F1={summary['simple_reconciliation']['f1']:.4f}, "
-                f"random_F1={summary['random_explorer']['f1']:.4f}, "
-                f"attack_ret={summary['flag_everything_attack']['return']:.4f}"
-            ),
-        )
-    )
-
-    elapsed_s = time.perf_counter() - t0
-    all_passed = all(ok for _, ok, _ in checks)
-
-    print("\n=== Audit RL Verification Summary ===")
-    for name, ok, detail in checks:
-        status = "PASS" if ok else "FAIL"
-        print(f"[{status}] {name}: {detail}")
     print("\n=== Eval Baseline Table (SubprocessAuditEnv, mode=eval, 20 episodes) ===")
-    print(_format_baseline_table(summary))
-    print(f"\nOverall: {'PASS' if all_passed else 'FAIL'} ({elapsed_s:.2f}s)")
-    return 0 if all_passed else 1
+    print(_format_baseline_table(report["baseline_summary"]))
+    overall_str = "PASS" if report["overall_pass"] else "FAIL"
+    print(
+        f"\nOverall: {overall_str} ({report['total_score']:.1f}/{report['max_score']:.1f}) "
+        f"in {report['duration_s']:.2f}s"
+    )
+    return 0 if report["overall_pass"] else 1
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
@@ -446,8 +362,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_base = sub.add_parser("run-baselines", help="Run all 4 baseline policies on 20 eval episodes.")
     p_base.add_argument("--json", action="store_true", help="Print JSON summary only.")
 
-    p_ver = sub.add_parser("verify", help="Run full one-command verification suite.")
-    p_ver.add_argument("-v", "--verbose", action="store_true", help="Verbose unittest output.")
+    p_ver = sub.add_parser("verify", help="Run full one-command 100-point rubric verification suite.")
+    p_ver.add_argument("-v", "--verbose", action="store_true", help="Verbose check & unittest output.")
+    p_ver.add_argument("--json", action="store_true", help="Print full JSON scorecard.")
 
     sub.add_parser("demo", help="Run a readable walkthrough of one audit episode.")
 
