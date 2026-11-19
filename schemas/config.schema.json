@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/config.schema.json",
+  "title": "Generation configuration",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "error_counts": {
+      "type": "object",
+      "properties": {
+        "duplicate_invoice": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payment_allocation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fx_conversion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "period_cutoff": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "interaction_scenarios": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/id"
+      },
+      "uniqueItems": true
+    },
+    "include_distractors": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "error_counts"
+  ],
+  "additionalProperties": false
+}

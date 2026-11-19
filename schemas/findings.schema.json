@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/findings.schema.json",
+  "title": "Public episode submission",
+  "type": "object",
+  "properties": {
+    "episode_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "$ref": "common.schema.json#/$defs/error_type"
+          },
+          "affected_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "minItems": 1
+          },
+          "claimed_amount_minor": {
+            "$ref": "common.schema.json#/$defs/minor"
+          },
+          "currency": {
+            "$ref": "common.schema.json#/$defs/currency"
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "maxItems": 10
+          },
+          "explanation": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "type",
+          "affected_ids",
+          "claimed_amount_minor",
+          "currency",
+          "evidence_ids",
+          "explanation"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 30
+    }
+  },
+  "required": [
+    "episode_id",
+    "findings"
+  ],
+  "additionalProperties": false
+}

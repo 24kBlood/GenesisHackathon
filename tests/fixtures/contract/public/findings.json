@@ -1,0 +1,13 @@
+{
+  "episode_id": "ep-cf50625d",
+  "findings": [
+    {
+      "type": "fx_conversion",
+      "affected_ids": ["row-cca24", "row-b862c"],
+      "claimed_amount_minor": 10000,
+      "currency": "KZT",
+      "evidence_ids": ["doc-72a9", "fx:2026-11-11:USD:KZT", "policy", "row-cca24", "row-b862c"],
+      "explanation": "По курсу на дату платежа сумма в KZT больше отражённой на 10 000 минимальных единиц."
+    }
+  ]
+}

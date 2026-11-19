@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/observation.schema.json",
+  "title": "Public auditor observation",
+  "type": "object",
+  "properties": {
+    "remaining_steps": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "task": {
+      "type": "string"
+    },
+    "manifest": {
+      "$ref": "manifest.schema.json"
+    },
+    "policy": {
+      "$ref": "policy.schema.json"
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "ledger-row.schema.json"
+          },
+          {
+            "$ref": "fx-row.schema.json"
+          },
+          {
+            "$ref": "invoice.schema.json"
+          },
+          {
+            "$ref": "payment.schema.json"
+          }
+        ]
+      },
+      "maxItems": 50
+    },
+    "cursor": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "record": {
+      "anyOf": [
+        {
+          "$ref": "ledger-row.schema.json"
+        },
+        {
+          "$ref": "fx-row.schema.json"
+        },
+        {
+          "$ref": "invoice.schema.json"
+        },
+        {
+          "$ref": "payment.schema.json"
+        }
+      ]
+    },
+    "document": {
+      "anyOf": [
+        {
+          "$ref": "invoice.schema.json"
+        },
+        {
+          "$ref": "payment.schema.json"
+        },
+        {
+          "$ref": "policy.schema.json"
+        }
+      ]
+    },
+    "result": {
+      "type": "string"
+    },
+    "error": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "status": {
+      "enum": [
+        "submitted",
+        "truncated"
+      ]
+    }
+  },
+  "required": [
+    "remaining_steps"
+  ],
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "required": [
+        "task"
+      ]
+    },
+    {
+      "required": [
+        "records"
+      ]
+    },
+    {
+      "required": [
+        "record"
+      ]
+    },
+    {
+      "required": [
+        "document"
+      ]
+    },
+    {
+      "required": [
+        "result"
+      ]
+    },
+    {
+      "required": [
+        "error"
+      ]
+    },
+    {
+      "required": [
+        "status"
+      ]
+    }
+  ],
+  "dependentRequired": {
+    "task": [
+      "manifest",
+      "policy"
+    ],
+    "manifest": [
+      "task"
+    ],
+    "policy": [
+      "task"
+    ],
+    "cursor": [
+      "records"
+    ]
+  }
+}

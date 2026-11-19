@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/fx-row.schema.json",
+  "title": "Public fx.csv row",
+  "type": "object",
+  "properties": {
+    "date": {
+      "$ref": "common.schema.json#/$defs/date"
+    },
+    "source_currency": {
+      "$ref": "common.schema.json#/$defs/currency"
+    },
+    "target_currency": {
+      "$ref": "common.schema.json#/$defs/currency"
+    },
+    "rate": {
+      "$ref": "common.schema.json#/$defs/rate"
+    }
+  },
+  "required": [
+    "date",
+    "source_currency",
+    "target_currency",
+    "rate"
+  ],
+  "additionalProperties": false
+}

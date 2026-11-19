@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/trajectories.schema.json",
+  "title": "One public trajectory JSONL step",
+  "type": "object",
+  "properties": {
+    "episode_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "step": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "action": {
+      "oneOf": [
+        {
+          "$ref": "action.schema.json"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "invalid"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "observation": {
+      "$ref": "observation.schema.json"
+    },
+    "reward": {
+      "type": "number",
+      "minimum": -1,
+      "maximum": 1
+    },
+    "terminated": {
+      "type": "boolean"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "episode_id",
+    "step",
+    "action",
+    "observation",
+    "reward",
+    "terminated",
+    "truncated"
+  ],
+  "additionalProperties": false,
+  "not": {
+    "properties": {
+      "terminated": {
+        "const": true
+      },
+      "truncated": {
+        "const": true
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "terminated": {
+        "const": false
+      },
+      "truncated": {
+        "const": false
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "reward": {
+        "const": 0
+      }
+    }
+  }
+}

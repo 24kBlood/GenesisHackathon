@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/payment.schema.json",
+  "title": "Public payment document",
+  "type": "object",
+  "properties": {
+    "doc_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "payment_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "timestamp": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "currency": {
+      "$ref": "common.schema.json#/$defs/currency"
+    },
+    "amount_minor": {
+      "$ref": "common.schema.json#/$defs/minor"
+    },
+    "invoice_refs": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/id"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "doc_id",
+    "payment_id",
+    "timestamp",
+    "currency",
+    "amount_minor",
+    "invoice_refs"
+  ],
+  "additionalProperties": false
+}

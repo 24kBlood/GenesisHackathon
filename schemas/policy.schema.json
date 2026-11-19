@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/policy.schema.json",
+  "title": "Public accounting policy",
+  "type": "object",
+  "properties": {
+    "fx_date_rule": {
+      "enum": [
+        "payment_date",
+        "invoice_date",
+        "posting_date"
+      ]
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1
+    },
+    "period_start": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "period_end": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "rounding_mode": {
+      "$ref": "common.schema.json#/$defs/rounding"
+    }
+  },
+  "required": [
+    "fx_date_rule",
+    "timezone",
+    "period_start",
+    "period_end",
+    "rounding_mode"
+  ],
+  "additionalProperties": false
+}

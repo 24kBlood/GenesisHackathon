@@ -1,0 +1,15 @@
+{
+  "episode_id": "ep-cf50625d",
+  "issues": [
+    {
+      "issue_id": "issue-e589",
+      "type": "fx_conversion",
+      "affected_ids": ["row-cca24", "row-b862c"],
+      "expected_amount_minor": 10000,
+      "currency": "KZT",
+      "acceptable_evidence_sets": [
+        ["doc-72a9", "fx:2026-11-11:USD:KZT", "policy", "row-cca24", "row-b862c"]
+      ]
+    }
+  ]
+}

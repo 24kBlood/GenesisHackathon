@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/ledger-row.schema.json",
+  "title": "Typed public ledger.csv row",
+  "type": "object",
+  "properties": {
+    "row_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "timestamp": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "account": {
+      "type": "string",
+      "minLength": 1
+    },
+    "debit_minor": {
+      "$ref": "common.schema.json#/$defs/minor"
+    },
+    "credit_minor": {
+      "$ref": "common.schema.json#/$defs/minor"
+    },
+    "currency": {
+      "$ref": "common.schema.json#/$defs/currency"
+    },
+    "entity_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "invoice_id": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "payment_id": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "row_id",
+    "timestamp",
+    "account",
+    "debit_minor",
+    "credit_minor",
+    "currency",
+    "entity_id",
+    "invoice_id",
+    "payment_id"
+  ],
+  "additionalProperties": false
+}
