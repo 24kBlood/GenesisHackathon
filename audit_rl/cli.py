@@ -5,6 +5,7 @@ Subcommands:
 - run-baselines: evaluate all 4 baseline policies on the 20 held-out eval episodes (SubprocessAuditEnv, eval mode)
 - verify: one-command full verification suite matching the 100-point rubric
 - demo: readable step-by-step walkthrough of a single audit episode
+- gui: launch the local offline Web GUI dashboard
 """
 
 from __future__ import annotations
@@ -424,6 +425,14 @@ def cmd_demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gui(args: argparse.Namespace) -> int:
+    from audit_rl.gui import run_gui
+
+    root = Path(args.root).resolve() if args.root else _repo_root()
+    run_gui(host=args.host, port=args.port, open_browser=bool(args.open), root=root)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="audit-rl",
@@ -441,6 +450,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_ver.add_argument("-v", "--verbose", action="store_true", help="Verbose unittest output.")
 
     sub.add_parser("demo", help="Run a readable walkthrough of one audit episode.")
+
+    p_gui = sub.add_parser("gui", help="Launch the local offline Web GUI dashboard.")
+    p_gui.add_argument("--host", default="127.0.0.1", help="Host interface to bind (default: 127.0.0.1).")
+    p_gui.add_argument("--port", type=int, default=8765, help="Port to listen on (default: 8765).")
+    p_gui.add_argument("--open", action="store_true", help="Open the dashboard in the default web browser.")
     return parser
 
 
@@ -455,6 +469,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_verify(args)
     if args.command == "demo":
         return cmd_demo(args)
+    if args.command == "gui":
+        return cmd_gui(args)
     parser.print_help()
     return 2
 
