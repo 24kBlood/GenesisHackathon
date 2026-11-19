@@ -1,0 +1,3394 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AuditInfo / AuditLab — Архитектура RL-среды аудита</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep: #040c12;
+    --bg-mid: #081822;
+    --bg-panel: rgba(8, 25, 35, 0.82);
+    --bg-panel-hi: rgba(12, 36, 48, 0.88);
+    --cyan: #66f7e8;
+    --cyan-mid: #32cfc2;
+    --cyan-dim: #1c6a73;
+    --cyan-faint: rgba(102, 247, 232, 0.08);
+    --blue: #52a8ff;
+    --amber: #ff9c42;
+    --amber-hot: #ff5d3a;
+    --amber-bg: rgba(255, 132, 56, 0.10);
+    --green: #46f59e;
+    --green-bg: rgba(70, 245, 158, 0.10);
+    --text-hi: #e8fbf9;
+    --text-mid: #92c8cf;
+    --text-dim: #4c828d;
+    --font-display: 'Space Grotesk', 'Inter', system-ui, -apple-system, sans-serif;
+    --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --stage-w: 1600px;
+    --stage-h: 900px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-deep);
+    color: var(--text-hi);
+    font-family: var(--font-body);
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Full-screen edge-to-edge HUD viewport (zero letterboxing!) */
+  #viewport {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg-deep);
+  }
+
+  #stage {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background:
+      radial-gradient(circle at 50% 48%, rgba(36, 130, 145, 0.16) 0%, rgba(5, 16, 23, 0.42) 68%, rgba(2, 8, 12, 0.94) 100%),
+      linear-gradient(90deg, rgba(102, 247, 232, 0.045) 1px, transparent 1px) 0 0 / 32px 32px,
+      linear-gradient(0deg, rgba(102, 247, 232, 0.045) 1px, transparent 1px) 0 0 / 32px 32px,
+      linear-gradient(90deg, rgba(102, 247, 232, 0.09) 1px, transparent 1px) 0 0 / 160px 160px,
+      linear-gradient(0deg, rgba(102, 247, 232, 0.09) 1px, transparent 1px) 0 0 / 160px 160px,
+      #06131b;
+    overflow: hidden;
+  }
+
+  /* Floating Cyber-HUD Hover Tooltip */
+  #hud-tooltip {
+    position: fixed;
+    z-index: 9998;
+    max-width: 310px;
+    padding: 10px 14px;
+    background: rgba(5, 19, 27, 0.96);
+    border: 1px solid var(--cyan);
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65), 0 0 20px rgba(102, 247, 232, 0.25);
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.96);
+    transition: opacity 0.16s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+    backdrop-filter: blur(8px);
+  }
+  #hud-tooltip.show {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  #hud-tooltip.amber {
+    border-color: var(--amber);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65), 0 0 20px rgba(255, 156, 66, 0.28);
+  }
+  #hud-tooltip .tip-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 4px;
+  }
+  #hud-tooltip.amber .tip-head { color: var(--amber); }
+  #hud-tooltip .tip-body {
+    font-family: var(--font-body);
+    font-size: 13px;
+    line-height: 1.42;
+    color: var(--text-hi);
+  }
+
+  /* Ambient interactive particle canvas */
+  #bg-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 0.7;
+  }
+
+  /* Click ripple sonar pulse */
+  .hud-ripple {
+    position: fixed;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--cyan);
+    box-shadow: 0 0 14px var(--cyan);
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%) scale(0.3);
+    animation: hudRipple 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  .hud-ripple.amber {
+    border-color: var(--amber);
+    box-shadow: 0 0 14px var(--amber);
+  }
+  @keyframes hudRipple {
+    0%   { opacity: 0.95; transform: translate(-50%, -50%) scale(0.3); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(4.2); }
+  }
+
+  /* Primary glowing NEXT / START CTA button */
+  .btn-primary-hud {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 22px;
+    background: linear-gradient(135deg, rgba(102, 247, 232, 0.22), rgba(50, 207, 194, 0.10));
+    border: 1.5px solid var(--cyan);
+    color: var(--text-hi);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    box-shadow: 0 0 18px rgba(102, 247, 232, 0.28), inset 0 0 14px rgba(102, 247, 232, 0.12);
+    transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .btn-primary-hud:hover {
+    background: linear-gradient(135deg, rgba(102, 247, 232, 0.38), rgba(50, 207, 194, 0.22));
+    box-shadow: 0 0 28px rgba(102, 247, 232, 0.52), inset 0 0 18px rgba(102, 247, 232, 0.2);
+    transform: translateY(-2px) scale(1.03);
+    color: #fff;
+  }
+  .btn-primary-hud:active {
+    transform: translateY(1px) scale(0.97);
+  }
+  .btn-primary-hud .chev {
+    display: inline-block;
+    transition: transform 0.22s ease;
+  }
+  .btn-primary-hud:hover .chev {
+    transform: translateX(4px);
+  }
+
+  /* Vault shake animation when clicking locked files */
+  @keyframes vaultShake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-6px); }
+    40% { transform: translateX(6px); }
+    60% { transform: translateX(-4px); }
+    80% { transform: translateX(4px); }
+  }
+  .shake-denied {
+    animation: vaultShake 0.38s ease;
+    border-color: var(--amber-hot) !important;
+    box-shadow: 0 0 28px rgba(255, 93, 58, 0.55) !important;
+  }
+
+  /* Shield deflect flash */
+  @keyframes shieldPulse {
+    0% { filter: drop-shadow(0 0 4px #66f7e8); transform: scale(1); }
+    40% { filter: drop-shadow(0 0 34px #66f7e8); transform: scale(1.06); }
+    100% { filter: drop-shadow(0 0 8px #66f7e8); transform: scale(1); }
+  }
+  .shield-flash {
+    animation: shieldPulse 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Interactive clickable hint cursor */
+  .interactive-card { cursor: pointer; }
+  .interactive-card:active { transform: scale(0.985) !important; }
+
+  /* Subtle CRT / HUD scanline texture */
+  #stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(102, 247, 232, 0.015) 0px,
+      rgba(102, 247, 232, 0.015) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+    pointer-events: none;
+    z-index: 80;
+  }
+
+  /* Holographic transition sweep beam */
+  #scan-sweep {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 220px;
+    left: -260px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(102, 247, 232, 0.04) 40%,
+      rgba(102, 247, 232, 0.32) 72%,
+      rgba(102, 247, 232, 0.85) 75%,
+      rgba(102, 247, 232, 0.06) 82%,
+      transparent 100%
+    );
+    pointer-events: none;
+    z-index: 95;
+    opacity: 0;
+  }
+  #scan-sweep.sweeping {
+    animation: sweepAcross 0.62s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  @keyframes sweepAcross {
+    0%   { left: -260px; opacity: 0; }
+    15%  { opacity: 1; }
+    85%  { opacity: 0.9; }
+    100% { left: calc(100vw + 40px); opacity: 0; }
+  }
+
+  /* Outer HUD frame corner ticks */
+  .stage-frame-corners {
+    position: absolute;
+    inset: 18px;
+    pointer-events: none;
+    z-index: 70;
+  }
+  .stage-frame-corners::before,
+  .stage-frame-corners::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(102, 247, 232, 0.14);
+  }
+  .corner-tick {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-color: var(--cyan);
+    border-style: solid;
+    opacity: 0.65;
+  }
+  .corner-tick.tl { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+  .corner-tick.tr { top: -1px; right: -1px; border-width: 2px 2px 0 0; }
+  .corner-tick.bl { bottom: -1px; left: -1px; border-width: 0 0 2px 2px; }
+  .corner-tick.br { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+  /* Persistent Top HUD Bar */
+  .hud-topbar {
+    position: absolute;
+    top: 26px;
+    left: 42px;
+    right: 42px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 75;
+    pointer-events: auto;
+  }
+  .hud-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    letter-spacing: 0.14em;
+    color: var(--text-hi);
+    text-transform: uppercase;
+  }
+  .hud-brand-icon {
+    width: 26px;
+    height: 26px;
+    border: 1.5px solid var(--cyan);
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 0 12px rgba(102, 247, 232, 0.35);
+    color: var(--cyan);
+    font-size: 11px;
+  }
+  .hud-brand span.dim { color: var(--text-dim); }
+  .hud-top-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .status-pill {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 16px;
+    background: rgba(8, 28, 38, 0.85);
+    border: 1px solid rgba(102, 247, 232, 0.45);
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    color: var(--cyan);
+    box-shadow: inset 0 0 16px rgba(102, 247, 232, 0.08);
+  }
+  .led {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 10px var(--cyan), 0 0 18px var(--cyan);
+    animation: pulseLed 2.2s ease-in-out infinite;
+  }
+  .led.amber { background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+  .led.green { background: var(--green); box-shadow: 0 0 10px var(--green); }
+  @keyframes pulseLed {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.85); }
+  }
+
+  .hud-btn {
+    background: rgba(8, 28, 38, 0.85);
+    border: 1px solid rgba(102, 247, 232, 0.32);
+    color: var(--text-mid);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+  }
+  .hud-btn:hover, .hud-btn.active {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    background: rgba(102, 247, 232, 0.12);
+    box-shadow: 0 0 14px rgba(102, 247, 232, 0.22);
+  }
+
+  /* Persistent Bottom Navigation Bar */
+  .hud-bottombar {
+    position: absolute;
+    bottom: 24px;
+    left: 42px;
+    right: 42px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 75;
+    gap: 20px;
+  }
+  .nav-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .slide-counter {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--cyan);
+    letter-spacing: 0.1em;
+    min-width: 82px;
+    text-align: center;
+  }
+  .progress-track {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 18px;
+  }
+  .progress-seg {
+    flex: 1;
+    height: 5px;
+    background: rgba(102, 247, 232, 0.14);
+    border: 1px solid rgba(102, 247, 232, 0.18);
+    cursor: pointer;
+    transition: all 0.25s ease;
+    position: relative;
+  }
+  .progress-seg:hover {
+    background: rgba(102, 247, 232, 0.38);
+    height: 8px;
+  }
+  .progress-seg.visited {
+    background: rgba(102, 247, 232, 0.34);
+  }
+  .progress-seg.active {
+    background: var(--cyan);
+    box-shadow: 0 0 12px var(--cyan);
+    height: 8px;
+  }
+  .slide-hint {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+
+  /* Slide Container & Smooth Transitions */
+  #slides-container {
+    position: absolute;
+    inset: 0;
+    perspective: 1400px;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 78px 42px 74px 42px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(64px) scale(0.975);
+    filter: blur(4px);
+    transition:
+      opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.62s cubic-bezier(0.22, 1, 0.36, 1),
+      filter 0.5s ease;
+    display: flex;
+    flex-direction: column;
+  }
+  .slide.prev-exit {
+    transform: translateX(-64px) scale(0.975);
+    opacity: 0;
+    filter: blur(4px);
+  }
+  .slide.next-exit {
+    transform: translateX(64px) scale(0.975);
+    opacity: 0;
+    filter: blur(4px);
+  }
+  .slide.active {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0) scale(1);
+    filter: blur(0);
+    z-index: 10;
+  }
+
+  /* Staggered HUD Module Boot Animation */
+  .slide .anim {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+    transition:
+      opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: calc(var(--d, 0) * 65ms + 100ms);
+  }
+  .slide.active .anim {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  /* Slide Title Header */
+  .slide-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(102, 247, 232, 0.16);
+    position: relative;
+  }
+  .slide-header::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: -1px;
+    width: 140px;
+    height: 2px;
+    background: var(--cyan);
+    box-shadow: 0 0 12px var(--cyan);
+  }
+  .slide-title {
+    font-family: var(--font-display);
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-hi);
+    text-shadow: 0 0 24px rgba(102, 247, 232, 0.18);
+  }
+  .slide-tag {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    color: var(--cyan-mid);
+    text-transform: uppercase;
+  }
+
+  /* Chamfered HUD Panel (Signature Image 15 Look + Dynamic Hover Spotlight & 3D Tilt!) */
+  .hud-panel {
+    position: relative;
+    background:
+      radial-gradient(280px circle at var(--mx, 50%) var(--my, 50%), rgba(102, 247, 232, 0.13), transparent 70%),
+      linear-gradient(90deg, rgba(102, 247, 232, 0.03) 1px, transparent 1px) 0 0 / 24px 24px,
+      linear-gradient(0deg, rgba(102, 247, 232, 0.03) 1px, transparent 1px) 0 0 / 24px 24px,
+      var(--bg-panel);
+    border: 1px solid rgba(102, 247, 232, 0.34);
+    clip-path: polygon(
+      16px 0, calc(100% - 16px) 0,
+      100% 16px, 100% calc(100% - 16px),
+      calc(100% - 16px) 100%, 16px 100%,
+      0 calc(100% - 16px), 0 16px
+    );
+    box-shadow: inset 0 0 28px rgba(102, 247, 232, 0.055);
+    padding: 18px 20px;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+  .hud-panel:hover {
+    border-color: rgba(102, 247, 232, 0.72);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38), 0 0 22px rgba(102, 247, 232, 0.16), inset 0 0 32px rgba(102, 247, 232, 0.09);
+  }
+  .hud-panel.amber:hover {
+    border-color: rgba(255, 156, 66, 0.85);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38), 0 0 24px rgba(255, 156, 66, 0.22), inset 0 0 32px rgba(255, 156, 66, 0.12);
+  }
+  .hud-panel.green:hover {
+    border-color: rgba(70, 245, 158, 0.85);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38), 0 0 24px rgba(70, 245, 158, 0.20), inset 0 0 32px rgba(70, 245, 158, 0.11);
+  }
+  /* Bright cyan chamfered accent lines (top-left & bottom-right) */
+  .hud-panel::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 16px;
+    width: 64px;
+    height: 3px;
+    background: var(--cyan);
+    box-shadow: 0 0 12px var(--cyan);
+    pointer-events: none;
+  }
+  .hud-panel::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    right: 16px;
+    width: 64px;
+    height: 3px;
+    background: var(--cyan);
+    box-shadow: 0 0 12px var(--cyan);
+    pointer-events: none;
+  }
+  .hud-panel.amber {
+    border-color: rgba(255, 156, 66, 0.45);
+    background:
+      linear-gradient(90deg, rgba(255, 156, 66, 0.035) 1px, transparent 1px) 0 0 / 24px 24px,
+      linear-gradient(0deg, rgba(255, 156, 66, 0.035) 1px, transparent 1px) 0 0 / 24px 24px,
+      rgba(34, 18, 12, 0.78);
+    box-shadow: inset 0 0 28px rgba(255, 132, 56, 0.08);
+  }
+  .hud-panel.amber::before,
+  .hud-panel.amber::after {
+    background: var(--amber);
+    box-shadow: 0 0 12px var(--amber);
+  }
+  .hud-panel.green {
+    border-color: rgba(70, 245, 158, 0.45);
+    box-shadow: inset 0 0 28px rgba(70, 245, 158, 0.07);
+  }
+  .hud-panel.green::before,
+  .hud-panel.green::after {
+    background: var(--green);
+    box-shadow: 0 0 12px var(--green);
+  }
+
+  .panel-label {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .hud-panel.amber .panel-label { color: var(--amber); }
+  .hud-panel.green .panel-label { color: var(--green); }
+
+  .mono { font-family: var(--font-mono); }
+  .text-cyan { color: var(--cyan); }
+  .text-amber { color: var(--amber); }
+  .text-green { color: var(--green); }
+  .text-dim { color: var(--text-dim); }
+  .text-mid { color: var(--text-mid); }
+
+  /* Chip badges */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--cyan);
+    background: rgba(102, 247, 232, 0.09);
+    border: 1px solid rgba(102, 247, 232, 0.35);
+    border-radius: 3px;
+  }
+  .chip.amber {
+    color: var(--amber);
+    background: rgba(255, 156, 66, 0.10);
+    border-color: rgba(255, 156, 66, 0.4);
+  }
+  .chip.green {
+    color: var(--green);
+    background: rgba(70, 245, 158, 0.10);
+    border-color: rgba(70, 245, 158, 0.4);
+  }
+
+  /* =========================================================
+     SLIDE 1: SYSTEM MODULES HERO (EXACT IMAGE 15 LAYOUT!)
+     ========================================================= */
+  .s1-grid {
+    display: grid;
+    grid-template-columns: minmax(210px, 18%) 1fr minmax(175px, 14%) minmax(165px, 13.5%);
+    grid-template-rows: 22% 1fr 31%;
+    gap: 16px;
+    height: 100%;
+  }
+  .s1-power   { grid-column: 1; grid-row: 1 / 3; display: flex; flex-direction: column; justify-content: space-between; }
+  .s1-hero    { grid-column: 2; grid-row: 1 / 3; display: flex; flex-direction: column; justify-content: space-between; }
+  .s1-link    { grid-column: 3 / 5; grid-row: 1; display: flex; flex-direction: column; justify-content: space-between; }
+  .s1-buffer  { grid-column: 1; grid-row: 3; display: flex; flex-direction: column; justify-content: space-between; }
+  .s1-bottom-mid {
+    grid-column: 2; grid-row: 3;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  .s1-ports   { grid-column: 3; grid-row: 2 / 4; display: flex; flex-direction: column; justify-content: space-between; }
+  .s1-gate    { grid-column: 4; grid-row: 2; display: flex; flex-direction: column; justify-content: space-between; }
+  .s1-faults  { grid-column: 4; grid-row: 3; display: flex; flex-direction: column; justify-content: space-between; }
+
+  .bar-row { margin: 10px 0; }
+  .bar-meta { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--text-mid); margin-bottom: 5px; }
+  .bar-track { height: 10px; background: rgba(102, 247, 232, 0.08); border: 1px solid rgba(102, 247, 232, 0.25); padding: 2px; }
+  .bar-fill { height: 100%; background: linear-gradient(90deg, var(--cyan-mid), var(--cyan)); box-shadow: 0 0 10px rgba(102, 247, 232, 0.55); transition: width 1.1s cubic-bezier(0.22, 1, 0.36, 1); }
+
+  .buffer-cells {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    margin-top: 8px;
+  }
+  .b-cell {
+    height: 15px;
+    background: rgba(102, 247, 232, 0.10);
+    border: 1px solid rgba(102, 247, 232, 0.22);
+    transition: all 0.3s ease;
+  }
+  .b-cell.on {
+    background: rgba(102, 247, 232, 0.68);
+    border-color: var(--cyan);
+    box-shadow: 0 0 8px rgba(102, 247, 232, 0.4);
+  }
+
+  .port-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 6px;
+    border-bottom: 1px dashed rgba(102, 247, 232, 0.14);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-mid);
+  }
+  .port-hex {
+    width: 24px;
+    height: 24px;
+    clip-path: polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0 50%);
+    background: rgba(102, 247, 232, 0.15);
+    border: 1px solid var(--cyan-dim);
+    display: grid;
+    place-items: center;
+  }
+  .port-hex.linked {
+    background: rgba(102, 247, 232, 0.45);
+    box-shadow: 0 0 12px rgba(102, 247, 232, 0.5);
+  }
+
+  /* Animated SVG dash flow */
+  .flow-line {
+    stroke-dasharray: 8 6;
+    animation: dashFlow 1.4s linear infinite;
+  }
+  .flow-line-slow {
+    stroke-dasharray: 10 8;
+    animation: dashFlow 2.4s linear infinite;
+  }
+  @keyframes dashFlow {
+    to { stroke-dashoffset: -28; }
+  }
+  .spin-slow {
+    transform-origin: center;
+    animation: spin360 14s linear infinite;
+  }
+  @keyframes spin360 {
+    to { transform: rotate(360deg); }
+  }
+
+  /* =========================================================
+     SLIDE 2: 3-COLUMN ARCHITECTURE & ISOLATION
+     ========================================================= */
+  .s2-layout {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 16px;
+    position: relative;
+  }
+  .s2-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    z-index: 2;
+  }
+  .s2-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    min-height: 0;
+  }
+  .s2-card svg {
+    height: clamp(82px, 14.5vh, 160px);
+    width: auto;
+    max-width: 100%;
+  }
+  .s2-card h3 {
+    font-family: var(--font-display);
+    font-size: clamp(20px, 1.7vw, 26px);
+    color: var(--text-hi);
+    margin-bottom: 4px;
+  }
+  .s2-card p {
+    font-size: clamp(12.5px, 1vw, 15px);
+    color: var(--text-mid);
+    line-height: 1.35;
+  }
+  .s2-middle-band {
+    height: clamp(70px, 11vh, 112px);
+    flex-shrink: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .agent-node {
+    padding: 14px 44px;
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--cyan);
+    background: rgba(6, 28, 38, 0.95);
+    border: 2px solid var(--cyan);
+    box-shadow: 0 0 28px rgba(102, 247, 232, 0.32);
+    z-index: 4;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  }
+  .s2-banner {
+    padding: 15px 24px;
+    text-align: center;
+    font-size: 17px;
+    color: var(--text-hi);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+  }
+
+  /* =========================================================
+     SLIDE 3: VISIBILITY LINE & DATA STRUCTURE
+     ========================================================= */
+  .s3-layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr minmax(260px, 22%);
+    gap: 22px;
+    min-height: 0;
+  }
+  .s3-main {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+  }
+  .file-card {
+    background: rgba(8, 28, 39, 0.85);
+    border: 1px solid rgba(102, 247, 232, 0.35);
+    padding: 16px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%);
+    transition: transform 0.25s ease, border-color 0.25s ease;
+  }
+  .file-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--cyan);
+    box-shadow: 0 8px 24px rgba(102, 247, 232, 0.16);
+  }
+  .file-name {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-hi);
+  }
+  .file-desc {
+    font-size: 11px;
+    color: var(--text-mid);
+  }
+  .vis-divider {
+    position: relative;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .vis-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--amber) 0 14px, transparent 14px 24px);
+    box-shadow: 0 0 14px rgba(255, 156, 66, 0.6);
+  }
+  .vis-badge {
+    position: relative;
+    z-index: 2;
+    padding: 5px 22px;
+    background: #140e0a;
+    border: 1px solid var(--amber);
+    color: var(--amber);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    box-shadow: 0 0 18px rgba(255, 156, 66, 0.35);
+  }
+  .vault-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .vault-card {
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    text-align: center;
+  }
+  .stat-block {
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(102, 247, 232, 0.16);
+    text-align: center;
+  }
+  .stat-block:last-child { border-bottom: none; }
+  .stat-num {
+    font-family: var(--font-display);
+    font-size: 38px;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 18px rgba(102, 247, 232, 0.3);
+  }
+  .stat-label {
+    font-size: 15px;
+    color: var(--text-mid);
+    margin-top: 4px;
+  }
+
+  /* =========================================================
+     SLIDE 4: TOPOLOGY OF FINANCIAL DISCREPANCIES (INTERACTIVE!)
+     ========================================================= */
+  .s4-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .s4-matrix {
+    flex: 1;
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 22px;
+  }
+  .quad-card {
+    padding: 26px 32px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    transition: all 0.28s ease;
+  }
+  .quad-card.right { align-items: flex-end; text-align: right; }
+  .quad-card:hover, .quad-card.selected {
+    transform: scale(1.015);
+    border-color: var(--amber);
+    box-shadow: 0 0 32px rgba(255, 156, 66, 0.25), inset 0 0 30px rgba(255, 156, 66, 0.12);
+  }
+  .quad-title {
+    font-family: var(--font-display);
+    font-size: 34px;
+    font-weight: 700;
+    color: var(--text-hi);
+    margin-bottom: 8px;
+  }
+  .quad-sub {
+    font-size: 18px;
+    color: var(--text-mid);
+    max-width: 340px;
+  }
+  .quad-code {
+    margin-top: 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--amber);
+  }
+  .venn-center {
+    position: absolute;
+    top: calc(50% - 122px);
+    left: calc(50% - 190px);
+    width: 380px;
+    height: 244px;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    cursor: pointer;
+  }
+  .venn-ring {
+    position: absolute;
+    width: 225px;
+    height: 225px;
+    border-radius: 50%;
+    border: 2px solid var(--cyan);
+    background: radial-gradient(circle, rgba(102, 247, 232, 0.18), rgba(6, 28, 38, 0.85));
+    box-shadow: 0 0 30px rgba(102, 247, 232, 0.32), inset 0 0 24px rgba(102, 247, 232, 0.18);
+  }
+  .venn-ring.l { left: 16px; }
+  .venn-ring.r { right: 16px; }
+  .venn-content {
+    position: relative;
+    z-index: 2;
+    padding: 0 24px;
+  }
+  .s4-inspector {
+    height: 76px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    gap: 20px;
+  }
+
+  /* =========================================================
+     SLIDE 5: ENVIRONMENT CONTRACT (RL LOOP)
+     ========================================================= */
+  .s5-layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr minmax(320px, 28%);
+    gap: 24px;
+    align-items: stretch;
+    min-height: 0;
+  }
+  .s5-loop-panel {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .s5-rules {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 18px;
+  }
+  .s5-rule-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 22px 24px;
+  }
+  .s5-rule-card h4 {
+    font-family: var(--font-display);
+    font-size: 24px;
+    margin-top: 8px;
+    color: var(--text-hi);
+  }
+  .s5-rule-card p {
+    font-size: 14px;
+    color: var(--text-mid);
+    margin-top: 8px;
+  }
+
+  /* =========================================================
+     SLIDE 6: 5-TOOL INTERFACE & FIREWALL
+     ========================================================= */
+  .s6-layout {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 18px;
+  }
+  .tools-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 18px;
+    flex: 1;
+  }
+  .tool-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    text-align: center;
+    padding: 22px 16px;
+  }
+  .tool-card:hover {
+    border-color: var(--cyan);
+    transform: translateY(-5px);
+    box-shadow: 0 12px 28px rgba(102, 247, 232, 0.18);
+  }
+  .tool-name {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--cyan);
+    padding: 10px 8px;
+    background: rgba(102, 247, 232, 0.08);
+    border: 1px solid rgba(102, 247, 232, 0.25);
+  }
+  .tool-desc {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text-hi);
+    line-height: 1.4;
+  }
+  .tool-meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .firewall-bar {
+    height: 120px;
+    background:
+      repeating-linear-gradient(
+        -45deg,
+        rgba(255, 156, 66, 0.11) 0px,
+        rgba(255, 156, 66, 0.11) 14px,
+        rgba(20, 12, 8, 0.85) 14px,
+        rgba(20, 12, 8, 0.85) 28px
+      );
+    border: 1.5px solid rgba(255, 156, 66, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 40px;
+  }
+  .ban-badge {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 26px;
+    background: rgba(18, 11, 8, 0.92);
+    border: 1px solid var(--amber);
+    font-family: var(--font-mono);
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text-hi);
+    box-shadow: 0 0 20px rgba(255, 156, 66, 0.22);
+  }
+
+  /* =========================================================
+     SLIDE 7: INVESTIGATION TRAJECTORY
+     ========================================================= */
+  .s7-layout {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+  }
+  .traj-steps {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 20px;
+    align-items: end;
+    height: 300px;
+    padding: 0 10px;
+  }
+  .traj-node {
+    padding: 18px 18px;
+    transition: all 0.4s ease;
+  }
+  .traj-node.step-1 { margin-bottom: 0px; }
+  .traj-node.step-2 { margin-bottom: 42px; }
+  .traj-node.step-3 { margin-bottom: 84px; }
+  .traj-node.step-4 { margin-bottom: 126px; }
+  .traj-node.step-5 { margin-bottom: 168px; }
+  .traj-node.lit {
+    box-shadow: 0 0 28px rgba(102, 247, 232, 0.35), inset 0 0 24px rgba(102, 247, 232, 0.14);
+    border-color: var(--cyan);
+  }
+  .traj-node.amber.lit {
+    box-shadow: 0 0 32px rgba(255, 156, 66, 0.45), inset 0 0 24px rgba(255, 156, 66, 0.18);
+    border-color: var(--amber);
+  }
+  .s7-bottom {
+    display: grid;
+    grid-template-columns: minmax(220px, 24%) 1fr minmax(260px, 26%);
+    gap: 20px;
+    align-items: center;
+  }
+  .json-box {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    line-height: 1.6;
+    padding: 20px 26px;
+    color: var(--text-hi);
+  }
+  .json-key { color: var(--cyan); }
+  .json-val { color: var(--amber); }
+
+  /* =========================================================
+     SLIDE 8: MATCHER ARCHITECTURE
+     ========================================================= */
+  .s8-layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(200px, 19%) 1fr minmax(200px, 19%);
+    grid-template-rows: 1fr 140px;
+    gap: 20px;
+    position: relative;
+    min-height: 0;
+  }
+  .matcher-core {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 28px 38px;
+  }
+  .check-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .check-list li {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 19px;
+    color: var(--text-hi);
+  }
+  .check-box {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--green);
+    background: rgba(70, 245, 158, 0.12);
+    border: 1px solid var(--green);
+    padding: 3px 8px;
+  }
+  .s8-outcomes {
+    grid-column: 1 / 4;
+    grid-row: 2;
+    display: flex;
+    justify-content: center;
+    gap: 90px;
+    align-items: center;
+  }
+  .outcome-box {
+    width: 340px;
+    height: 112px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  /* =========================================================
+     SLIDE 9: TERMINAL REWARD & INTERACTIVE SIMULATOR
+     ========================================================= */
+  .s9-layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(240px, 22%) 1fr minmax(240px, 22%);
+    grid-template-rows: minmax(110px, 20%) minmax(150px, 28%) 1fr;
+    gap: 16px;
+    min-height: 0;
+  }
+  .s9-recall { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 20px; padding: 18px 26px; }
+  .s9-prec   { grid-column: 1; grid-row: 2; display: flex; align-items: center; gap: 16px; padding: 18px 22px; }
+  .s9-formula{ grid-column: 2; grid-row: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .s9-f1     { grid-column: 3; grid-row: 2; display: flex; align-items: center; gap: 16px; padding: 18px 22px; }
+  .s9-sim    { grid-column: 1 / 3; grid-row: 3; display: grid; grid-template-columns: 1fr 220px; gap: 20px; align-items: center; padding: 18px 24px; }
+  .s9-chart  { grid-column: 3; grid-row: 3; display: flex; flex-direction: column; justify-content: space-between; padding: 16px 20px; }
+
+  .formula-text {
+    font-family: var(--font-mono);
+    font-size: 23px;
+    font-weight: 700;
+    color: var(--cyan);
+    text-shadow: 0 0 18px rgba(102, 247, 232, 0.35);
+    line-height: 1.5;
+  }
+  .slider-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 68px;
+    align-items: center;
+    gap: 12px;
+    margin: 9px 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  input[type="range"].hud-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    background: rgba(102, 247, 232, 0.18);
+    outline: none;
+    border-radius: 2px;
+  }
+  input[type="range"].hud-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--cyan);
+    box-shadow: 0 0 12px var(--cyan);
+    cursor: pointer;
+    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  }
+
+  /* =========================================================
+     SLIDE 10: ANTI-GAMING SHIELD
+     ========================================================= */
+  .s10-layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(280px, 28%) 1fr minmax(280px, 28%);
+    align-items: center;
+    gap: 20px;
+    position: relative;
+    min-height: 0;
+  }
+  .vector-card {
+    padding: 22px 24px;
+  }
+  .vector-card h4 {
+    font-family: var(--font-display);
+    font-size: 21px;
+    color: var(--amber);
+    margin-bottom: 10px;
+  }
+  .vector-card p {
+    font-size: 16px;
+    color: var(--text-hi);
+    line-height: 1.5;
+  }
+
+  /* =========================================================
+     SLIDE 11: TESTING POLICIES + REAL BENCHMARKS
+     ========================================================= */
+  .s11-layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr minmax(280px, 25%);
+    gap: 22px;
+    min-height: 0;
+  }
+  .policy-stack {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .policy-row {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 76px 260px 1fr 220px;
+    align-items: center;
+    gap: 18px;
+    padding: 14px 22px;
+  }
+  .policy-name {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-hi);
+  }
+  .policy-desc {
+    font-size: 16px;
+    color: var(--text-mid);
+  }
+  .policy-metrics {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  /* =========================================================
+     SLIDE 12: EVALUATION RUBRIC GAUGES
+     ========================================================= */
+  .s12-layout {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 22px;
+  }
+  .gauges-row {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .gauge-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    text-align: center;
+    padding: 20px 14px;
+    min-width: 0;
+  }
+  .gauge-card svg {
+    width: 100%;
+    max-width: 200px;
+    height: auto;
+  }
+  .gauge-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-hi);
+    line-height: 1.25;
+  }
+  .gauge-desc {
+    font-size: 15px;
+    color: var(--text-mid);
+    line-height: 1.45;
+  }
+  .gauge-needle {
+    transform-origin: 100px 105px;
+    transform: rotate(-85deg);
+    transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.3s;
+  }
+  .slide.active .gauge-needle {
+    transform: rotate(var(--ang, 0deg));
+  }
+
+  /* =========================================================
+     SLIDE 13: AUTONOMOUS DEPLOYMENT SPEC
+     ========================================================= */
+  .s13-layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(240px, 24%) 1fr minmax(240px, 24%);
+    gap: 22px;
+    align-items: stretch;
+    min-height: 0;
+  }
+  .spec-col {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 24px;
+  }
+  .spec-item {
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(102, 247, 232, 0.16);
+    font-size: 18px;
+    color: var(--text-hi);
+    text-align: center;
+  }
+  .spec-item:last-child { border-bottom: none; }
+  .spec-item small {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-mid);
+    margin-top: 4px;
+  }
+  .s13-center {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .offline-stamp {
+    position: absolute;
+    bottom: 22px;
+    right: 26px;
+    padding: 12px 24px;
+    border: 2.5px solid var(--green);
+    color: var(--green);
+    font-family: var(--font-mono);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    transform: rotate(-6deg);
+    background: rgba(5, 22, 18, 0.9);
+    box-shadow: 0 0 28px rgba(70, 245, 158, 0.32);
+  }
+
+  /* =========================================================
+     SLIDE 14: BUILD STRATEGY ROADMAP
+     ========================================================= */
+  .s14-layout {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  /* Slide 14 responsive positioning so it fills any screen cleanly */
+  .phase-box {
+    position: absolute;
+    width: min(320px, 24vw);
+    padding: 16px 18px;
+    z-index: 4;
+  }
+  .phase-box h4 {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--cyan);
+    margin-bottom: 6px;
+    letter-spacing: 0.1em;
+  }
+  .phase-box p {
+    font-size: 18px;
+    color: var(--text-hi);
+    line-height: 1.4;
+  }
+
+  /* =========================================================
+     SLIDE OVERVIEW MOSAIC MODAL (Press G)
+     ========================================================= */
+  #overview-modal {
+    position: absolute;
+    inset: 0;
+    background: rgba(3, 10, 15, 0.95);
+    backdrop-filter: blur(10px);
+    z-index: 120;
+    display: none;
+    flex-direction: column;
+    padding: 36px 48px;
+  }
+  #overview-modal.open { display: flex; }
+  .ov-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    border-bottom: 1px solid rgba(102, 247, 232, 0.25);
+    padding-bottom: 14px;
+  }
+  .ov-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .ov-card {
+    background: rgba(8, 26, 36, 0.88);
+    border: 1px solid rgba(102, 247, 232, 0.28);
+    padding: 16px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.2s ease;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  }
+  .ov-card:hover, .ov-card.current {
+    border-color: var(--cyan);
+    background: rgba(16, 48, 62, 0.92);
+    box-shadow: 0 0 22px rgba(102, 247, 232, 0.26);
+    transform: translateY(-3px);
+  }
+  .ov-num { font-family: var(--font-mono); font-size: 12px; color: var(--cyan); }
+  .ov-title { font-family: var(--font-display); font-size: 16px; font-weight: 600; color: var(--text-hi); }
+  .ov-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <!-- Ambient interactive cyber-particle canvas -->
+    <canvas id="bg-canvas" width="1600" height="900"></canvas>
+
+    <!-- Outer HUD corner brackets -->
+    <div class="stage-frame-corners">
+      <div class="corner-tick tl"></div>
+      <div class="corner-tick tr"></div>
+      <div class="corner-tick bl"></div>
+      <div class="corner-tick br"></div>
+    </div>
+
+    <!-- Holographic transition sweep -->
+    <div id="scan-sweep"></div>
+
+    <!-- Top HUD Chrome -->
+    <header class="hud-topbar">
+      <div class="hud-brand">
+        <div class="hud-brand-icon">⊞</div>
+        <span>SYSTEM MODULES</span>
+        <span class="dim">//</span>
+        <span class="text-cyan">AUDITINFO · AUDITLAB RL-ENV</span>
+      </div>
+      <div class="hud-top-right">
+        <button class="hud-btn" id="btn-sound" title="Звуковые эффекты HUD (S)">SFX: OFF</button>
+        <button class="hud-btn" id="btn-overview" title="Сетка слайдов (G)">GRID [G]</button>
+        <button class="hud-btn" id="btn-fs" title="Полный экран (F)">FULL [F]</button>
+        <div class="status-pill">
+          <span class="led"></span>
+          <span id="status-text">MATRIX ONLINE</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- All 14 Slides -->
+    <main id="slides-container">
+
+      <!-- ============================================================
+           SLIDE 1: HERO SYSTEM MODULES DASHBOARD
+           ============================================================ -->
+      <section class="slide active" data-title="Архитектура RL-среды аудита AuditInfo" data-code="SYS-01 // HERO">
+        <div class="s1-grid">
+          <!-- POWER BUS -->
+          <div class="hud-panel s1-power anim" style="--d:0">
+            <div>
+              <div class="panel-label"><span>POWER BUS</span><span class="led"></span></div>
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin:10px 0 18px;">
+                <div>
+                  <div class="mono text-dim" style="font-size:11px;">RUNTIME</div>
+                  <div class="mono" style="font-size:30px;font-weight:700;color:var(--text-hi);">PY <span class="text-cyan">3.11</span></div>
+                </div>
+                <span class="mono text-cyan" style="font-size:11px;">STDLIB LIVE</span>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta"><span>PRIMARY · GENERATOR</span><span>84%</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:84%"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta"><span>SECONDARY · IPC ENV</span><span>62%</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:62%"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta"><span>STANDBY · MATCHER</span><span>48%</span></div>
+                <div class="bar-track"><div class="bar-fill" style="width:48%"></div></div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding-top:12px;border-top:1px solid rgba(102,247,232,0.14);">
+              <span class="mono text-dim" style="font-size:11px;">LOAD</span>
+              <span class="mono text-cyan" style="font-size:15px;font-weight:700;">62%</span>
+              <div class="bar-track" style="width:110px;"><div class="bar-fill" style="width:62%"></div></div>
+            </div>
+          </div>
+
+          <!-- SIGNAL ROUTING (MAIN TITLE HERO) -->
+          <div class="hud-panel s1-hero anim" style="--d:1">
+            <div class="panel-label">
+              <span>SIGNAL ROUTING</span>
+              <span class="mono text-dim" style="font-size:11px;">RX ── CORE ── TX</span>
+            </div>
+
+            <!-- Background animated circuit routing SVG -->
+            <div style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:10px 24px;">
+              <svg viewBox="0 0 720 260" style="position:absolute;inset:0;width:100%;height:100%;opacity:0.28;pointer-events:none;">
+                <path d="M 30 60 L 140 60 L 185 100 L 290 100 L 360 130 L 440 100 L 560 100 L 605 60 L 690 60" fill="none" stroke="#66f7e8" stroke-width="1.5" class="flow-line"/>
+                <path d="M 30 130 L 180 130 L 240 165 L 480 165 L 540 130 L 690 130" fill="none" stroke="#66f7e8" stroke-width="2" class="flow-line-slow"/>
+                <path d="M 30 200 L 160 200 L 210 165 L 510 165 L 560 200 L 690 200" fill="none" stroke="#32cfc2" stroke-width="1.2"/>
+                <circle cx="30" cy="60" r="4" fill="#66f7e8"/><circle cx="690" cy="60" r="4" fill="#66f7e8"/>
+                <circle cx="30" cy="130" r="5" fill="#66f7e8"/><circle cx="690" cy="130" r="5" fill="#66f7e8"/>
+                <circle cx="30" cy="200" r="4" fill="#32cfc2"/><circle cx="690" cy="200" r="4" fill="#32cfc2"/>
+              </svg>
+
+              <div style="position:relative;z-index:2;">
+                <h1 style="font-family:var(--font-display);font-size:clamp(26px, 3vw, 46px);font-weight:700;line-height:1.12;color:var(--text-hi);text-shadow:0 0 32px rgba(102,247,232,0.28);">
+                  Архитектура RL-среды<br>аудита <span class="text-cyan">AuditInfo</span>
+                </h1>
+                <p style="font-size:clamp(14px, 1.35vw, 21px);color:var(--text-mid);margin-top:10px;font-weight:400;">
+                  Воспроизводимый симулятор для ИИ-аудиторов
+                </p>
+                <div style="display:flex;justify-content:center;gap:8px;margin-top:14px;flex-wrap:wrap;">
+                  <span class="chip" style="font-size:12px;padding:4px 10px;">[FinTech 2026]</span>
+                  <span class="chip" style="font-size:12px;padding:4px 10px;">[Closed Environment]</span>
+                  <span class="chip" style="font-size:12px;padding:4px 10px;">[Gymnasium API]</span>
+                  <span class="chip green" style="font-size:12px;padding:4px 10px;">[100% Offline]</span>
+                </div>
+                <div style="margin-top:16px;">
+                  <button class="btn-primary-hud" id="btn-hero-start" style="padding:10px 26px;font-size:13px;">
+                    <span>НАЧАТЬ ПРЕЗЕНТАЦИЮ</span>
+                    <span class="chev">▸</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;font-family:var(--font-mono);font-size:11px;color:var(--text-dim);padding-top:10px;border-top:1px solid rgba(102,247,232,0.14);">
+              <span><span style="color:var(--cyan);">━━</span> ACTIVE ROUTE</span>
+              <span>── STANDBY</span>
+              <span style="color:var(--cyan);">● PATH LOCKED</span>
+            </div>
+          </div>
+
+          <!-- LINK STATUS -->
+          <div class="hud-panel s1-link anim" style="--d:2">
+            <div class="panel-label"><span>LINK STATUS</span><span class="led green"></span></div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;font-family:var(--font-mono);font-size:13px;">
+                <span class="text-cyan">◆ UPLINK: READY</span>
+                <span class="text-dim" style="flex:1;border-bottom:1px dashed rgba(102,247,232,0.25);margin:0 12px;"></span>
+                <span class="text-green">ACTIVE</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;font-family:var(--font-mono);font-size:13px;">
+                <span class="text-mid">◇ IPC WORKER</span>
+                <span class="text-dim" style="flex:1;border-bottom:1px dashed rgba(102,247,232,0.2);margin:0 12px;"></span>
+                <span class="text-cyan">ISOLATED</span>
+              </div>
+              <div class="bar-track" style="height:12px;"><div class="bar-fill" style="width:92%"></div></div>
+            </div>
+          </div>
+
+          <!-- BUFFER -->
+          <div class="hud-panel s1-buffer anim" style="--d:3">
+            <div class="panel-label"><span>BUFFER</span><span class="mono text-dim" style="font-size:11px;">EPISODE RAM</span></div>
+            <div style="display:flex;align-items:baseline;gap:8px;">
+              <span class="mono" style="font-size:34px;font-weight:700;color:var(--text-hi);">100%</span>
+              <span class="mono text-dim" style="font-size:12px;">/ 4 GB MAX</span>
+            </div>
+            <div class="buffer-cells" id="s1-buffer-grid"></div>
+            <div class="mono text-dim" style="font-size:11px;text-align:right;margin-top:6px;">59% USED · CPU ONLY</div>
+          </div>
+
+          <!-- TIMING & INTEGRITY -->
+          <div class="s1-bottom-mid">
+            <div class="hud-panel anim" style="--d:4;display:flex;flex-direction:column;justify-content:space-between;">
+              <div class="panel-label"><span>TIMING</span><span class="mono text-cyan" style="font-size:11px;">SYNCED ●</span></div>
+              <div style="display:flex;align-items:baseline;gap:8px;">
+                <span class="mono" style="font-size:34px;font-weight:700;">125</span>
+                <span class="mono text-mid" style="font-size:14px;">Hz</span>
+              </div>
+              <svg viewBox="0 0 280 64" style="width:100%;height:64px;">
+                <path d="M 4 46 L 26 46 L 26 16 L 62 16 L 62 46 L 98 46 L 98 16 L 134 16 L 134 46 L 170 46 L 170 16 L 206 16 L 206 46 L 242 46 L 242 16 L 276 16"
+                  fill="none" stroke="#66f7e8" stroke-width="2.2" class="flow-line-slow"/>
+                <line x1="0" y1="58" x2="280" y2="58" stroke="rgba(102,247,232,0.22)" stroke-dasharray="3 5"/>
+              </svg>
+            </div>
+            <div class="hud-panel anim" style="--d:5;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+              <div>
+                <div class="panel-label" style="margin-bottom:8px;"><span>INTEGRITY</span></div>
+                <div class="mono text-dim" style="font-size:11px;">PACKET CHECK</div>
+                <div class="mono" style="font-size:34px;font-weight:700;margin:4px 0;">99.8<span style="font-size:16px;color:var(--cyan);">%</span></div>
+                <div class="mono text-green" style="font-size:12px;">PASS · 61/61</div>
+              </div>
+              <svg viewBox="0 0 110 110" width="106" height="106">
+                <circle cx="55" cy="55" r="46" fill="none" stroke="rgba(102,247,232,0.18)" stroke-width="2" stroke-dasharray="4 4" class="spin-slow"/>
+                <circle cx="55" cy="55" r="34" fill="rgba(102,247,232,0.06)" stroke="#66f7e8" stroke-width="2.5"/>
+                <path d="M 40 55 L 50 66 L 72 44" fill="none" stroke="#66f7e8" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+
+          <!-- PORT ARRAY (Interactive toggles!) -->
+          <div class="hud-panel s1-ports anim" style="--d:6">
+            <div class="panel-label"><span>PORT ARRAY</span><span class="mono text-dim" style="font-size:10px;">CLICK</span></div>
+            <div style="display:flex;flex-direction:column;gap:4px;" id="s1-port-list">
+              <div class="port-item interactive-card" data-port="1"><span>01</span><div class="port-hex linked"></div><span class="led"></span></div>
+              <div class="port-item interactive-card" data-port="2"><span>02</span><div class="port-hex linked"></div><span class="led"></span></div>
+              <div class="port-item interactive-card" data-port="3"><span>03</span><div class="port-hex"></div><span class="mono text-dim">○</span></div>
+              <div class="port-item interactive-card" data-port="4"><span>04</span><div class="port-hex linked"></div><span class="led"></span></div>
+              <div class="port-item interactive-card" data-port="5"><span>05</span><div class="port-hex linked"></div><span class="led"></span></div>
+              <div class="port-item interactive-card" data-port="6"><span>06</span><div class="port-hex"></div><span class="mono text-dim">○</span></div>
+            </div>
+            <div class="mono text-cyan" id="s1-port-count" style="font-size:12px;text-align:center;margin-top:8px;">4 / 6 LINKED</div>
+          </div>
+
+          <!-- GATE -->
+          <div class="hud-panel s1-gate anim" style="--d:7">
+            <div class="panel-label"><span>GATE</span><span class="led"></span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:auto 0;">
+              <svg viewBox="0 0 64 56" width="66" height="58">
+                <rect x="3" y="3" width="58" height="50" rx="8" fill="none" stroke="#66f7e8" stroke-width="1.6"/>
+                <line x1="16" y1="28" x2="48" y2="28" stroke="#66f7e8" stroke-width="2"/>
+                <line x1="22" y1="16" x2="22" y2="40" stroke="#66f7e8" stroke-width="2"/>
+                <line x1="32" y1="16" x2="32" y2="40" stroke="#66f7e8" stroke-width="2"/>
+                <line x1="42" y1="16" x2="42" y2="40" stroke="#66f7e8" stroke-width="2"/>
+              </svg>
+              <div class="mono text-cyan" style="font-size:13px;font-weight:700;">ARMED</div>
+            </div>
+            <div class="mono text-dim" style="font-size:10px;text-align:right;">IPC GUARD</div>
+          </div>
+
+          <!-- FAULTS -->
+          <div class="hud-panel s1-faults anim" style="--d:8">
+            <div class="panel-label"><span>FAULTS</span></div>
+            <div style="display:flex;align-items:baseline;gap:12px;margin:auto 0;">
+              <span class="mono" style="font-size:50px;font-weight:700;color:var(--text-hi);">0</span>
+              <span class="mono text-mid" style="font-size:14px;">OPEN</span>
+            </div>
+            <div class="mono text-green" style="font-size:12px;">● CLEAR · 0 LEAKS</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 2: 3-MODULE ARCHITECTURE & ZERO-LEAK ISOLATION
+           ============================================================ -->
+      <section class="slide" data-title="Изоляция модулей и отсутствие утечек" data-code="SYS-02 // ISOLATION">
+        <div class="slide-header">
+          <h2 class="slide-title">Архитектура изоляции модулей</h2>
+          <span class="slide-tag">PROCESS BOUNDARY // ZERO LEAKAGE</span>
+        </div>
+        <div class="s2-layout">
+          <div class="s2-cols">
+            <!-- Generator -->
+            <div class="hud-panel s2-card anim" style="--d:0">
+              <div>
+                <div class="panel-label" style="justify-content:center;">MODULE 01</div>
+                <h3>Generator</h3>
+                <p>Синтез истории компании, генерация скрытых ошибок и согласованных документов.</p>
+              </div>
+              <svg viewBox="0 0 220 170" width="220" height="170">
+                <rect x="12" y="14" width="196" height="142" rx="6" fill="rgba(102,247,232,0.06)" stroke="#66f7e8" stroke-width="1.8"/>
+                <circle cx="68" cy="86" r="30" fill="none" stroke="#66f7e8" stroke-width="2.2" stroke-dasharray="10 6" class="spin-slow"/>
+                <circle cx="68" cy="86" r="12" fill="rgba(102,247,232,0.22)" stroke="#66f7e8" stroke-width="2"/>
+                <rect x="128" y="28" width="52" height="52" fill="rgba(102,247,232,0.12)" stroke="#66f7e8" stroke-width="1.6"/>
+                <rect x="136" y="36" width="14" height="14" fill="#66f7e8"/>
+                <rect x="158" y="36" width="14" height="14" fill="#66f7e8"/>
+                <rect x="136" y="58" width="14" height="14" fill="#66f7e8"/>
+                <rect x="158" y="58" width="14" height="14" fill="rgba(102,247,232,0.35)"/>
+                <text x="154" y="106" text-anchor="middle" fill="#92c8cf" font-family="JetBrains Mono" font-size="10">SEED → BOOKS</text>
+                <text x="154" y="128" text-anchor="middle" fill="#66f7e8" font-family="JetBrains Mono" font-size="11">∑D == ∑C</text>
+              </svg>
+              <span class="chip">generator.py · causal</span>
+            </div>
+
+            <!-- Environment Contract -->
+            <div class="hud-panel s2-card anim" style="--d:1;border-color:var(--cyan);box-shadow:0 0 34px rgba(102,247,232,0.16),inset 0 0 32px rgba(102,247,232,0.09);">
+              <div>
+                <div class="panel-label" style="justify-content:center;">GATEWAY // SINGLE ENTRY</div>
+                <h3 class="text-cyan">Environment Contract</h3>
+                <p>Узкий интерфейс взаимодействия.<br>Единственная точка контакта для ИИ-агента.</p>
+              </div>
+              <svg viewBox="0 0 220 170" width="220" height="170">
+                <rect x="26" y="14" width="168" height="142" fill="rgba(102,247,232,0.08)" stroke="#66f7e8" stroke-width="2"/>
+                <circle cx="110" cy="85" r="52" fill="none" stroke="#66f7e8" stroke-width="2.5" stroke-dasharray="18 8" class="spin-slow"/>
+                <circle cx="110" cy="85" r="34" fill="rgba(102,247,232,0.12)" stroke="#32cfc2" stroke-width="2"/>
+                <path d="M 110 58 L 110 85 L 130 98" fill="none" stroke="#66f7e8" stroke-width="3" stroke-linecap="round"/>
+                <circle cx="110" cy="85" r="5" fill="#66f7e8"/>
+              </svg>
+              <span class="chip">SubprocessAuditEnv · IPC</span>
+            </div>
+
+            <!-- Evaluator -->
+            <div class="hud-panel s2-card anim" style="--d:2">
+              <div>
+                <div class="panel-label" style="justify-content:center;">MODULE 03</div>
+                <h3>Evaluator</h3>
+                <p>Независимая проверка результатов<br>вне процесса агента.</p>
+              </div>
+              <svg viewBox="0 0 220 170" width="220" height="170">
+                <rect x="20" y="14" width="180" height="142" rx="6" fill="rgba(102,247,232,0.06)" stroke="#66f7e8" stroke-width="1.8"/>
+                <!-- Scales of verification -->
+                <line x1="110" y1="42" x2="110" y2="132" stroke="#66f7e8" stroke-width="2.5"/>
+                <line x1="62" y1="62" x2="158" y2="62" stroke="#66f7e8" stroke-width="2.5"/>
+                <path d="M 62 62 L 46 102 L 78 102 Z" fill="rgba(102,247,232,0.14)" stroke="#66f7e8" stroke-width="1.6"/>
+                <path d="M 158 62 L 142 102 L 174 102 Z" fill="rgba(102,247,232,0.14)" stroke="#66f7e8" stroke-width="1.6"/>
+                <line x1="84" y1="132" x2="136" y2="132" stroke="#66f7e8" stroke-width="3"/>
+                <ellipse cx="110" cy="30" rx="18" ry="8" fill="none" stroke="#66f7e8" stroke-width="1.8"/>
+                <circle cx="110" cy="30" r="3.5" fill="#66f7e8"/>
+              </svg>
+              <span class="chip">eval_worker.py · isolated</span>
+            </div>
+          </div>
+
+          <!-- Animated conduits + Agent + Blocked leak paths -->
+          <div class="s2-middle-band anim" style="--d:3">
+            <svg viewBox="0 0 1516 120" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;">
+              <!-- Legal cyan flow: Generator -> Contract, Evaluator -> Contract, Agent -> Contract -->
+              <path d="M 285 0 L 285 52 L 660 52 L 660 0" fill="none" stroke="#66f7e8" stroke-width="4" class="flow-line"/>
+              <path d="M 856 0 L 856 52 L 1230 52 L 1230 0" fill="none" stroke="#66f7e8" stroke-width="4" class="flow-line"/>
+              <path d="M 758 60 L 758 0" fill="none" stroke="#66f7e8" stroke-width="5" class="flow-line"/>
+
+              <!-- Blocked direct paths Agent <-> Generator & Evaluator -->
+              <path d="M 640 84 L 220 84 L 220 0" fill="none" stroke="rgba(255,156,66,0.45)" stroke-width="2" stroke-dasharray="5 5"/>
+              <path d="M 876 84 L 1296 84 L 1296 0" fill="none" stroke="rgba(255,156,66,0.45)" stroke-width="2" stroke-dasharray="5 5"/>
+
+              <!-- Orange X gates -->
+              <g stroke="#ff5d3a" stroke-width="5" stroke-linecap="round">
+                <line x1="205" y1="22" x2="235" y2="52"/><line x1="235" y1="22" x2="205" y2="52"/>
+                <line x1="465" y1="69" x2="495" y2="99"/><line x1="495" y1="69" x2="465" y2="99"/>
+                <line x1="1020" y1="69" x2="1050" y2="99"/><line x1="1050" y1="69" x2="1020" y2="99"/>
+                <line x1="1281" y1="22" x2="1311" y2="52"/><line x1="1311" y1="22" x2="1281" y2="52"/>
+              </g>
+            </svg>
+            <div class="agent-node">AGENT</div>
+          </div>
+
+          <div class="hud-panel s2-banner anim" style="--d:4;justify-content:space-between;">
+            <span class="chip amber" id="s2-leak-badge">ZERO-LEAK GUARANTEE</span>
+            <span id="s2-leak-text"><strong>Исключение утечек:</strong> Оценщик работает вне процесса агента. Эталон не утекает через пути, debug info или объяснения награды.</span>
+            <button class="hud-btn" id="btn-test-leak" style="white-space:nowrap;border-color:var(--amber);color:var(--amber);">⚡ ТЕСТ УТЕЧКИ</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 3: PUBLIC DATA VS GROUND TRUTH (VISIBILITY LINE)
+           ============================================================ -->
+      <section class="slide" data-title="Публичные и скрытые данные эпизода" data-code="SYS-03 // DATA BOUNDARY">
+        <div class="slide-header">
+          <h2 class="slide-title">Граница видимости данных эпизода</h2>
+          <span class="slide-tag">OPEN OBSERVATION VS SEALED GROUND TRUTH</span>
+        </div>
+        <div class="s3-layout">
+          <div class="s3-main">
+            <!-- Public data -->
+            <div class="hud-panel anim" style="--d:0;padding:20px 22px;">
+              <div class="panel-label">
+                <span>ПУБЛИЧНЫЕ ДАННЫЕ (ДОСТУПНО АГЕНТУ)</span>
+                <span class="mono text-green" id="s3-preview-bar">НАЖМИТЕ НА ФАЙЛ ДЛЯ ПРЕДПРОСМОТРА</span>
+              </div>
+              <div class="file-grid">
+                <div class="file-card interactive-card" data-file="manifest">
+                  <div class="mono text-cyan" style="font-size:22px;">{ }</div>
+                  <div class="file-name">manifest.json</div>
+                  <div class="file-desc">Метаданные и период</div>
+                </div>
+                <div class="file-card interactive-card" data-file="ledger">
+                  <div class="mono text-cyan" style="font-size:22px;">▤</div>
+                  <div class="file-name">ledger.csv</div>
+                  <div class="file-desc">Главная книга (Дт/Кт)</div>
+                </div>
+                <div class="file-card interactive-card" data-file="invoices">
+                  <div class="mono text-cyan" style="font-size:22px;">⧉</div>
+                  <div class="file-name">invoices.jsonl</div>
+                  <div class="file-desc">Реестр инвойсов</div>
+                </div>
+                <div class="file-card interactive-card" data-file="payments">
+                  <div class="mono text-cyan" style="font-size:22px;">⇄</div>
+                  <div class="file-name">payments.jsonl</div>
+                  <div class="file-desc">Платежи и аллокации</div>
+                </div>
+                <div class="file-card interactive-card" data-file="fx">
+                  <div class="mono text-cyan" style="font-size:22px;">$€</div>
+                  <div class="file-name">fx.csv</div>
+                  <div class="file-desc">Курсы валют по датам</div>
+                </div>
+                <div class="file-card interactive-card" data-file="policy">
+                  <div class="mono text-cyan" style="font-size:22px;">§</div>
+                  <div class="file-name">policy.json</div>
+                  <div class="file-desc">Правила и допуски</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Laser Visibility Line -->
+            <div class="vis-divider anim" style="--d:1">
+              <div class="vis-line"></div>
+              <div class="vis-badge">⚡ VISIBILITY LINE — HARD IPC BOUNDARY ⚡</div>
+            </div>
+
+            <!-- Sealed Ground Truth -->
+            <div class="hud-panel amber anim" style="--d:2;padding:20px 22px;">
+              <div class="panel-label">
+                <span>СКРЫТЫЕ ДАННЫЕ (GROUND TRUTH)</span>
+                <span class="mono text-amber">LOCKED IN EVAL WORKER</span>
+              </div>
+              <div class="vault-grid">
+                <div class="hud-panel amber vault-card interactive-card" data-vault="truth.json">
+                  <div class="mono text-amber" style="font-size:26px;">🔒</div>
+                  <div class="mono" style="font-size:20px;font-weight:700;">truth.json</div>
+                  <div class="text-mid" style="font-size:13px;">Эталон аномалий и допустимые доказательства</div>
+                </div>
+                <div class="hud-panel amber vault-card interactive-card" data-vault="provenance.json">
+                  <div class="mono text-amber" style="font-size:26px;">🔒</div>
+                  <div class="mono" style="font-size:20px;font-weight:700;">provenance.json</div>
+                  <div class="text-mid" style="font-size:13px;">Причинный граф инъекции ошибок</div>
+                </div>
+                <div class="hud-panel amber vault-card interactive-card" data-vault="seed">
+                  <div class="mono text-amber" style="font-size:26px;">🔒</div>
+                  <div class="mono" style="font-size:20px;font-weight:700;">seed</div>
+                  <div class="text-mid" style="font-size:13px;">Крипто-детерминизм воспроизведения</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Episode Stats Sidebar -->
+          <div class="hud-panel anim" style="--d:3;display:flex;flex-direction:column;justify-content:space-between;">
+            <div class="panel-label"><span>СТАТИСТИКА ЭПИЗОДА</span><span class="led"></span></div>
+            <div class="stat-block">
+              <div class="stat-num">1 + 1</div>
+              <div class="stat-label">1 компания + 1 отчетный период</div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-num">200–2 000</div>
+              <div class="stat-label">бухгалтерских проводок</div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-num">20–200</div>
+              <div class="stat-label">первичных документов</div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-num text-amber">0–12</div>
+              <div class="stat-label">скрытых ошибок (+ чистые компании)</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 4: TOPOLOGY OF FINANCIAL DISCREPANCIES (INTERACTIVE)
+           ============================================================ -->
+      <section class="slide" data-title="Топология финансовых расхождений" data-code="SYS-04 // ERROR TAXONOMY">
+        <div class="slide-header">
+          <h2 class="slide-title">Топология финансовых расхождений</h2>
+          <span class="slide-tag">4 CANONICAL CLASSES + INTERACTING ANOMALIES</span>
+        </div>
+        <div class="s4-wrap">
+          <div class="s4-matrix">
+            <div class="hud-panel amber quad-card anim" style="--d:0" data-err="dup">
+              <div class="quad-title">Duplicates</div>
+              <div class="quad-sub">Дубли счетов и повторные проведения одного инвойса</div>
+              <div class="quad-code">type: "duplicate_invoice"</div>
+            </div>
+            <div class="hud-panel amber quad-card right anim" style="--d:1" data-err="alloc">
+              <div class="quad-title">Allocation</div>
+              <div class="quad-sub">Пропущенное или частичное распределение платежей</div>
+              <div class="quad-code">type: "payment_allocation_mismatch"</div>
+            </div>
+            <div class="hud-panel amber quad-card anim" style="--d:2" data-err="fx">
+              <div class="quad-title">FX / Time</div>
+              <div class="quad-sub">Неверная дата валютирования или некорректный кросс-курс</div>
+              <div class="quad-code">type: "fx_conversion_error"</div>
+            </div>
+            <div class="hud-panel amber quad-card right anim" style="--d:3" data-err="cutoff">
+              <div class="quad-title">Cut-off</div>
+              <div class="quad-sub">Ошибка отнесения операции к отчетному периоду</div>
+              <div class="quad-code">type: "period_cutoff_error"</div>
+            </div>
+
+            <!-- Central Venn Intersection -->
+            <div class="venn-center anim" style="--d:4" data-err="inter">
+              <div class="venn-ring l"></div>
+              <div class="venn-ring r"></div>
+              <div class="venn-content">
+                <div style="font-family:var(--font-display);font-size:23px;font-weight:700;color:var(--text-hi);margin-bottom:8px;">
+                  Взаимодействующие<br>ошибки
+                </div>
+                <div style="font-size:14px;color:var(--cyan);line-height:1.4;">
+                  Пример: частичный платеж +<br>другая валюта + граница периода
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Interactive Inspector Bar -->
+          <div class="hud-panel s4-inspector anim" style="--d:5" id="s4-inspector">
+            <span class="chip" id="s4-ins-tag">INTERACTIVE INSPECTOR</span>
+            <span id="s4-ins-text" style="flex:1;font-size:15px;color:var(--text-mid);">
+              Нажмите на любой квадрант или центр, чтобы увидеть сценарий расхождения и дистракторы AuditLab.
+            </span>
+            <span class="mono text-dim" style="font-size:12px;">CLICK ANY MODULE</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 5: ENVIRONMENT CONTRACT (GYMNASIUM LOOP)
+           ============================================================ -->
+      <section class="slide" data-title="Контракт среды" data-code="SYS-05 // GYMNASIUM API">
+        <div class="slide-header">
+          <h2 class="slide-title">Контракт среды</h2>
+          <div style="display:flex;align-items:center;gap:14px;">
+            <span class="mono text-cyan" id="s5-step-readout" style="font-size:13px;">STEP: 00 / 100 · REWARD: 0.0</span>
+            <button class="hud-btn" id="btn-s5-step">▶ STEP()</button>
+            <span class="slide-tag">DETERMINISTIC GYMNASIUM LOOP</span>
+          </div>
+        </div>
+        <div class="s5-layout">
+          <div class="hud-panel s5-loop-panel anim" style="--d:0">
+            <svg viewBox="0 0 880 560" style="width:100%;height:100%;">
+              <defs>
+                <marker id="arrowC" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#66f7e8"/>
+                </marker>
+              </defs>
+              <!-- Circuit Loop -->
+              <path d="M 520 90 L 730 90 L 730 218" fill="none" stroke="#66f7e8" stroke-width="3.2" marker-end="url(#arrowC)" class="flow-line"/>
+              <path d="M 730 330 L 730 470 L 535 470" fill="none" stroke="#66f7e8" stroke-width="3.2" marker-end="url(#arrowC)" class="flow-line"/>
+              <path d="M 345 470 L 150 470 L 150 342" fill="none" stroke="#66f7e8" stroke-width="3.2" marker-end="url(#arrowC)" class="flow-line"/>
+              <path d="M 150 220 L 150 90 L 340 90" fill="none" stroke="#66f7e8" stroke-width="3.2" marker-end="url(#arrowC)" class="flow-line"/>
+
+              <!-- Nodes -->
+              <g>
+                <rect x="350" y="42" width="170" height="96" fill="rgba(10,36,48,0.92)" stroke="#66f7e8" stroke-width="2.5"/>
+                <text x="435" y="99" text-anchor="middle" fill="#e8fbf9" font-family="Space Grotesk" font-size="28" font-weight="700">Agent</text>
+              </g>
+              <g>
+                <rect x="640" y="228" width="180" height="100" fill="rgba(10,36,48,0.92)" stroke="#66f7e8" stroke-width="2.5"/>
+                <text x="730" y="287" text-anchor="middle" fill="#e8fbf9" font-family="Space Grotesk" font-size="26" font-weight="700">Action</text>
+              </g>
+              <g>
+                <rect x="345" y="420" width="190" height="100" fill="rgba(10,36,48,0.92)" stroke="#66f7e8" stroke-width="2.5"/>
+                <text x="440" y="479" text-anchor="middle" fill="#66f7e8" font-family="Space Grotesk" font-size="25" font-weight="700">Environment</text>
+              </g>
+              <g>
+                <rect x="42" y="228" width="216" height="104" fill="rgba(10,36,48,0.92)" stroke="#66f7e8" stroke-width="2.5"/>
+                <text x="150" y="272" text-anchor="middle" fill="#e8fbf9" font-family="Space Grotesk" font-size="23" font-weight="700">Observation /</text>
+                <text x="150" y="304" text-anchor="middle" fill="#66f7e8" font-family="Space Grotesk" font-size="23" font-weight="700">Reward</text>
+              </g>
+
+              <!-- Callout A: reset -->
+              <rect x="242" y="168" width="380" height="54" fill="#061620" stroke="#32cfc2" stroke-width="1.6"/>
+              <rect x="594" y="168" width="28" height="24" fill="#66f7e8"/>
+              <text x="608" y="185" text-anchor="middle" fill="#041016" font-family="JetBrains Mono" font-size="13" font-weight="700">A</text>
+              <text x="260" y="201" fill="#e8fbf9" font-family="JetBrains Mono" font-size="16">reset(seed, config) -&gt; (obs, info)</text>
+
+              <!-- Callout B: step -->
+              <rect x="180" y="346" width="490" height="54" fill="#061620" stroke="#32cfc2" stroke-width="1.6"/>
+              <rect x="642" y="346" width="28" height="24" fill="#66f7e8"/>
+              <text x="656" y="363" text-anchor="middle" fill="#041016" font-family="JetBrains Mono" font-size="13" font-weight="700">B</text>
+              <text x="198" y="379" fill="#e8fbf9" font-family="JetBrains Mono" font-size="15.5">step(action) -&gt; (obs, reward, term, trunc, info)</text>
+            </svg>
+          </div>
+
+          <div class="s5-rules">
+            <div class="hud-panel s5-rule-card anim" style="--d:1">
+              <div class="panel-label"><span>STRICT DETERMINISM</span><span class="led"></span></div>
+              <h4>Идентичные действия = идентичный результат</h4>
+              <p>Полная воспроизводимость по seed без скрытого состояния и недетерминизма.</p>
+            </div>
+            <div class="hud-panel amber s5-rule-card anim" style="--d:2">
+              <div class="panel-label"><span>LIMIT</span><span class="led amber"></span></div>
+              <h4>Максимум 100 шагов</h4>
+              <p>Жёсткий бюджет эпизода отсекает перебор в лоб и стимулирует целевой аудит.</p>
+            </div>
+            <div class="hud-panel amber s5-rule-card anim" style="--d:3">
+              <div class="panel-label"><span>BLIND EXPLORATION</span><span class="led amber"></span></div>
+              <h4>Нулевая промежуточная награда</h4>
+              <p>Награда вычисляется только терминально при вызове <span class="mono text-cyan">submit()</span>.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 6: AI AUDITOR TOOLKIT & SANDBOX BARRIER
+           ============================================================ -->
+      <section class="slide" data-title="Инструментарий ИИ-аудитора" data-code="SYS-06 // 5-TOOL INTERFACE">
+        <div class="slide-header">
+          <h2 class="slide-title">Инструментарий ИИ-аудитора</h2>
+          <span class="slide-tag">NARROW ACTION SPACE // ZERO SHELL</span>
+        </div>
+        <div class="s6-layout">
+          <div class="tools-row">
+            <div class="hud-panel tool-card anim" style="--d:0">
+              <div class="tool-name">list_records</div>
+              <div class="tool-desc">Пагинация<br>до 50 строк</div>
+              <div class="tool-meta">ledger · invoices · payments · fx</div>
+            </div>
+            <div class="hud-panel tool-card anim" style="--d:1">
+              <div class="tool-name">get_record</div>
+              <div class="tool-desc">Точечный<br>запрос по ID</div>
+              <div class="tool-meta">O(1) lookup · exact match</div>
+            </div>
+            <div class="hud-panel tool-card anim" style="--d:2">
+              <div class="tool-name">get_document</div>
+              <div class="tool-desc">Извлечение<br>инвойса</div>
+              <div class="tool-meta">primary evidence retrieval</div>
+            </div>
+            <div class="hud-panel tool-card anim" style="--d:3">
+              <div class="tool-name">calculator</div>
+              <div class="tool-desc">Базовая<br>арифметика</div>
+              <div class="tool-meta">safe AST Decimal · no eval()</div>
+            </div>
+            <div class="hud-panel tool-card anim" style="--d:4;border-color:var(--green);">
+              <div class="tool-name" style="color:var(--green);border-color:rgba(70,245,158,0.4);">submit</div>
+              <div class="tool-desc">Отправка<br>findings.json</div>
+              <div class="tool-meta">terminates episode & scores</div>
+            </div>
+          </div>
+
+          <div class="firewall-bar anim" style="--d:5">
+            <div class="ban-badge"><span class="text-amber">✖</span> No Shell</div>
+            <div class="ban-badge"><span class="text-amber">✖</span> No SQL</div>
+            <div class="ban-badge"><span class="text-amber">✖</span> No Internet</div>
+          </div>
+
+          <div class="hud-panel amber anim" style="--d:6;text-align:center;padding:18px 28px;font-size:19px;">
+            <strong class="text-amber">ШТРАФ ЗА ОШИБКУ ПРОТОКОЛА:</strong> Неизвестный ID или неверное действие возвращает ошибку наблюдения и <strong>безвозвратно сжигает 1 шаг лимита</strong>.
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 7: INVESTIGATION TRAJECTORY (WITH REPLAY!)
+           ============================================================ -->
+      <section class="slide" data-title="Траектория расследования" data-code="SYS-07 // EPISODE TRACE">
+        <div class="slide-header">
+          <h2 class="slide-title">Траектория расследования</h2>
+          <div style="display:flex;align-items:center;gap:14px;">
+            <button class="hud-btn" id="btn-replay-traj">▶ REPLAY TRACE</button>
+            <span class="slide-tag">STEP-BY-STEP AUDIT SIGNAL</span>
+          </div>
+        </div>
+        <div class="s7-layout">
+          <div class="traj-steps" id="traj-steps">
+            <div class="hud-panel traj-node step-1 anim" style="--d:0" data-step="0">
+              <div class="mono text-cyan" style="font-size:12px;">STEP 01</div>
+              <div style="font-size:19px;font-weight:600;margin-top:6px;">Инициализация</div>
+              <div class="mono text-mid" style="font-size:13px;margin-top:4px;">reset(seed)</div>
+            </div>
+            <div class="hud-panel traj-node step-2 anim" style="--d:1" data-step="1">
+              <div class="mono text-cyan" style="font-size:12px;">STEP 12</div>
+              <div style="font-size:19px;font-weight:600;margin-top:6px;">Извлечение инвойсов</div>
+              <div class="mono text-mid" style="font-size:13px;margin-top:4px;">list_records / get_doc</div>
+            </div>
+            <div class="hud-panel traj-node step-3 anim" style="--d:2" data-step="2">
+              <div class="mono text-cyan" style="font-size:12px;">STEP 45</div>
+              <div style="font-size:19px;font-weight:600;margin-top:6px;">Кросс-курсы</div>
+              <div class="mono text-mid" style="font-size:13px;margin-top:4px;">calculator(Decimal)</div>
+            </div>
+            <div class="hud-panel amber traj-node step-4 anim" style="--d:3" data-step="3">
+              <div class="mono text-amber" style="font-size:12px;">STEP 89 · ALERT</div>
+              <div style="font-size:19px;font-weight:600;margin-top:6px;">Аномалия обнаружена</div>
+              <div class="mono text-amber" style="font-size:13px;margin-top:4px;">evidence_ids locked</div>
+            </div>
+            <div class="hud-panel green traj-node step-5 anim" style="--d:4" data-step="4">
+              <div class="mono text-green" style="font-size:12px;">STEP 90 · DONE</div>
+              <div style="font-size:19px;font-weight:600;margin-top:6px;">Завершение</div>
+              <div class="mono text-green" style="font-size:13px;margin-top:4px;">submit(findings)</div>
+            </div>
+          </div>
+
+          <div class="s7-bottom">
+            <div class="hud-panel anim" style="--d:5;padding:18px 20px;">
+              <div class="panel-label"><span>TRACE TELEMETRY</span></div>
+              <div class="mono text-mid" style="font-size:13px;line-height:1.7;">
+                • 30 записанных траекторий<br>
+                • 341 проверенный шаг<br>
+                • <span class="text-green">0 утечек truth / seed</span><br>
+                • Формат: <span class="text-cyan">trajectories.jsonl</span>
+              </div>
+            </div>
+
+            <div class="hud-panel json-box anim" style="--d:6">
+              <div class="panel-label"><span>SUBMIT PAYLOAD // FINDINGS.JSON</span></div>
+<pre style="font-family:var(--font-mono);font-size:15.5px;line-height:1.55;">{
+  <span class="json-key">"type"</span>: <span class="json-val">"fx_conversion_error"</span>,
+  <span class="json-key">"affected_ids"</span>: [<span class="json-val">"INV-0042"</span>, <span class="json-val">"LED-0318"</span>],
+  <span class="json-key">"currency"</span>: <span class="json-val">"EUR"</span>,
+  <span class="json-key">"evidence_ids"</span>: [<span class="json-val">"DOC-0042"</span>, <span class="json-val">"FX-2026-03-15"</span>],
+  <span class="json-key">"explanation"</span>: <span class="json-val">"Observed: ... Calculated: ..."</span>
+}</pre>
+            </div>
+
+            <div class="hud-panel anim" style="--d:7;padding:22px 24px;">
+              <div class="panel-label"><span>SCORING RULE</span><span class="led"></span></div>
+              <p style="font-size:16px;color:var(--text-hi);line-height:1.55;">
+                Объяснение (<span class="mono text-cyan">explanation</span>) ограничено <strong>1000 символов</strong> и игнорируется оценщиком.
+              </p>
+              <p style="font-size:15px;color:var(--cyan);margin-top:12px;">
+                Оцениваются только строгие верифицируемые факты и доказательства.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 8: MATCHER ARCHITECTURE (KUHN 1-TO-1)
+           ============================================================ -->
+      <section class="slide" data-title="Архитектура Matcher'a" data-code="SYS-08 // BIPARTITE MATCHER">
+        <div class="slide-header">
+          <h2 class="slide-title">Архитектура Matcher'a</h2>
+          <span class="slide-tag">DETERMINISTIC 1-TO-1 KUHN BIPARTITE MATCHING</span>
+        </div>
+        <div class="s8-layout">
+          <!-- Left Input -->
+          <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px;" class="anim" style="--d:0">
+            <div class="hud-panel" style="width:100%;text-align:center;padding:30px 18px;">
+              <div class="panel-label" style="justify-content:center;">INPUT A</div>
+              <div class="mono text-cyan" style="font-size:22px;font-weight:700;">findings.json</div>
+              <div class="text-mid" style="font-size:14px;margin-top:10px;">Данные от Агента</div>
+            </div>
+            <div class="mono text-cyan" style="font-size:22px;">════════▶</div>
+          </div>
+
+          <!-- Center Criteria Core (Interactive 5-point Matcher simulator!) -->
+          <div class="hud-panel matcher-core anim" style="--d:1;border-color:var(--cyan);box-shadow:0 0 36px rgba(102,247,232,0.16);">
+            <div class="panel-label">
+              <span>КРИТЕРИИ СТРОГОГО СОВПАДЕНИЯ (НАЖМИТЕ ДЛЯ ПРОВЕРКИ)</span>
+              <span class="chip">1-TO-1 KUHN</span>
+            </div>
+            <ul class="check-list" id="s8-checklist">
+              <li class="interactive-card" data-crit="1"><span class="check-box">✓</span> Правильный тип ошибки (<span class="mono text-cyan">type</span>)</li>
+              <li class="interactive-card" data-crit="1"><span class="check-box">✓</span> Точный набор <span class="mono text-cyan">affected_ids</span></li>
+              <li class="interactive-card" data-crit="1"><span class="check-box">✓</span> Сумма в рамках допустимой погрешности (<span class="mono text-cyan">Decimal</span>)</li>
+              <li class="interactive-card" data-crit="1"><span class="check-box">✓</span> Валюта совпадает (<span class="mono text-cyan">currency</span>)</li>
+              <li class="interactive-card" data-crit="1"><span class="check-box">✓</span> Достаточный набор <span class="mono text-cyan">evidence_ids</span></li>
+            </ul>
+          </div>
+
+          <!-- Right Input -->
+          <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px;" class="anim" style="--d:2">
+            <div class="hud-panel amber" style="width:100%;text-align:center;padding:30px 18px;">
+              <div class="panel-label" style="justify-content:center;">INPUT B · SEALED</div>
+              <div class="mono text-amber" style="font-size:22px;font-weight:700;">truth.json</div>
+              <div class="text-mid" style="font-size:14px;margin-top:10px;">Скрытый Эталон</div>
+            </div>
+            <div class="mono text-amber" style="font-size:22px;">◀════════</div>
+          </div>
+
+          <!-- Outcomes -->
+          <div class="s8-outcomes anim" style="--d:3">
+            <div class="hud-panel green outcome-box" id="s8-match-box" style="box-shadow:0 0 34px rgba(70,245,158,0.28);">
+              <div class="text-green">MATCH [TP]</div>
+              <div style="font-size:13px;color:var(--text-mid);font-weight:400;margin-top:6px;">Засчитано 1-к-1 в F1-метрику</div>
+            </div>
+            <div class="hud-panel amber outcome-box" id="s8-mismatch-box" style="opacity:0.42;">
+              <div class="text-amber">MISMATCH / FALSE POSITIVE</div>
+              <div style="font-size:13px;color:var(--text-mid);font-weight:400;margin-top:6px;">0 баллов · Снижает Precision</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 9: TERMINAL REWARD + INTERACTIVE SIMULATOR!
+           ============================================================ -->
+      <section class="slide" data-title="Расчет терминальной награды" data-code="SYS-09 // REWARD ENGINE">
+        <div class="slide-header">
+          <h2 class="slide-title">Расчет терминальной награды</h2>
+          <span class="slide-tag">INTERACTIVE FORMULA SIMULATOR // LIVE CALC</span>
+        </div>
+        <div class="s9-layout">
+          <div class="hud-panel s9-recall anim" style="--d:0">
+            <div class="mono text-cyan" style="font-size:36px;">⌕</div>
+            <div>
+              <div style="font-size:22px;font-weight:700;">Recall (R)</div>
+              <div class="text-mid" style="font-size:15px;">Полнота: штраф за пропуск реальных ошибок</div>
+            </div>
+          </div>
+
+          <div class="hud-panel s9-prec anim" style="--d:1">
+            <div class="mono text-cyan" style="font-size:36px;">◎</div>
+            <div>
+              <div style="font-size:21px;font-weight:700;">Precision (P)</div>
+              <div class="text-mid" style="font-size:14px;">Точность: защита от ложных обвинений</div>
+            </div>
+          </div>
+
+          <div class="hud-panel s9-formula anim" style="--d:2;border-color:var(--cyan);">
+            <div class="panel-label" style="width:100%;"><span>TERMINAL REWARD FUNCTION</span><span class="led"></span></div>
+            <div class="formula-text">
+              Reward = clip(2 * F1 - 1 - 0.002 * steps, -1, 1)
+            </div>
+          </div>
+
+          <div class="hud-panel s9-f1 anim" style="--d:3">
+            <div class="mono text-cyan" style="font-size:34px;">⚙</div>
+            <div>
+              <div style="font-size:21px;font-weight:700;">F1-Score</div>
+              <div class="text-mid" style="font-size:14px;">Гармоническое среднее P и R (база)</div>
+            </div>
+          </div>
+
+          <!-- Interactive Reward Simulator -->
+          <div class="hud-panel s9-sim anim" style="--d:4">
+            <div>
+              <div class="panel-label">
+                <span>LIVE REWARD SIMULATOR</span>
+                <div style="display:flex;gap:6px;">
+                  <button class="hud-btn" data-preset="oracle" style="padding:3px 8px;font-size:10px;">ORACLE</button>
+                  <button class="hud-btn" data-preset="simple" style="padding:3px 8px;font-size:10px;">SIMPLE</button>
+                  <button class="hud-btn" data-preset="attacker" style="padding:3px 8px;font-size:10px;border-color:var(--amber);color:var(--amber);">ATTACKER</button>
+                </div>
+              </div>
+              <div class="slider-row">
+                <span>Precision (P)</span>
+                <input type="range" class="hud-slider" id="sim-p" min="0" max="100" value="100">
+                <span class="text-cyan" id="val-p">1.00</span>
+              </div>
+              <div class="slider-row">
+                <span>Recall (R)</span>
+                <input type="range" class="hud-slider" id="sim-r" min="0" max="100" value="100">
+                <span class="text-cyan" id="val-r">1.00</span>
+              </div>
+              <div class="slider-row">
+                <span>Steps (0–100)</span>
+                <input type="range" class="hud-slider" id="sim-s" min="1" max="100" value="17">
+                <span class="text-amber" id="val-s">17</span>
+              </div>
+            </div>
+            <div style="text-align:center;border-left:1px solid rgba(102,247,232,0.18);padding-left:18px;">
+              <div class="mono text-dim" style="font-size:11px;">F1-SCORE</div>
+              <div class="mono text-cyan" id="out-f1" style="font-size:28px;font-weight:700;">1.000</div>
+              <div class="mono text-dim" style="font-size:11px;margin-top:10px;">TERMINAL REWARD</div>
+              <div class="mono text-green" id="out-rew" style="font-size:38px;font-weight:700;">+0.966</div>
+            </div>
+          </div>
+
+          <!-- Decay Chart -->
+          <div class="hud-panel s9-chart anim" style="--d:5">
+            <div class="panel-label" style="margin-bottom:4px;"><span>STEP PENALTY CURVE</span></div>
+            <svg viewBox="0 0 280 120" style="width:100%;height:115px;">
+              <line x1="20" y1="100" x2="265" y2="100" stroke="rgba(102,247,232,0.28)"/>
+              <line x1="20" y1="15" x2="20" y2="100" stroke="rgba(102,247,232,0.28)"/>
+              <path id="sim-curve" d="M 20 25 L 260 52" fill="none" stroke="#66f7e8" stroke-width="2.5"/>
+              <circle id="sim-dot" cx="60" cy="30" r="6" fill="#ff9c42" stroke="#fff" stroke-width="1.5"/>
+              <text x="24" y="114" fill="#4c828d" font-family="JetBrains Mono" font-size="10">0 steps</text>
+              <text x="210" y="114" fill="#4c828d" font-family="JetBrains Mono" font-size="10">100 steps</text>
+            </svg>
+            <div style="font-size:12.5px;color:var(--text-mid);line-height:1.35;">
+              Пенальти <span class="mono text-cyan">0.002 * steps</span> не меняет лидерство F1, но различает равных агентов.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 10: ANTI-SPECIFICATION GAMING SHIELD
+           ============================================================ -->
+      <section class="slide" data-title="Защита от спецификационного гейминга" data-code="SYS-10 // ANTI-GAMING">
+        <div class="slide-header">
+          <h2 class="slide-title">Защита от спецификационного гейминга</h2>
+          <span class="slide-tag">ADVERSARIAL DEFENSE // REWARD INTEGRITY</span>
+        </div>
+        <div class="s10-layout">
+          <div class="hud-panel amber vector-card interactive-card anim" style="--d:0" data-attack="SPAM ALL → Precision 0.0017 · Reward -0.994">
+            <div class="panel-label"><span>VECTOR 01 // SPAM ALL</span><span class="led amber"></span></div>
+            <h4>Пометить все строки</h4>
+            <p><strong class="text-cyan">Защита:</strong> Обрушение Precision до ~0.0017, терминальная награда мгновенно падает до <strong>-1.0</strong>.</p>
+          </div>
+
+          <!-- Center Holographic Shield SVG -->
+          <div style="display:flex;align-items:center;justify-content:center;position:relative;" class="anim" style="--d:1">
+            <svg id="s10-shield" viewBox="0 0 420 440" width="420" height="440">
+              <defs>
+                <radialGradient id="shieldGlow" cx="50%" cy="45%" r="55%">
+                  <stop offset="0%" stop-color="rgba(102,247,232,0.32)"/>
+                  <stop offset="100%" stop-color="rgba(8,28,38,0.85)"/>
+                </radialGradient>
+              </defs>
+              <!-- Outer Pulse Ring -->
+              <circle cx="210" cy="215" r="175" fill="none" stroke="rgba(102,247,232,0.16)" stroke-width="1.5" stroke-dasharray="8 8" class="spin-slow"/>
+              <!-- Shield Polygon -->
+              <path d="M 210 38 L 348 96 L 348 228 C 348 318 286 376 210 412 C 134 376 72 318 72 228 L 72 96 Z"
+                fill="url(#shieldGlow)" stroke="#66f7e8" stroke-width="3.5"/>
+              <path d="M 210 62 L 324 110 L 324 224 C 324 300 272 350 210 382 C 148 350 96 300 96 224 L 96 110 Z"
+                fill="none" stroke="rgba(102,247,232,0.45)" stroke-width="1.5"/>
+
+              <!-- Deflected Lightning Bolts -->
+              <path d="M 10 330 L 82 258 L 62 246 L 104 222" fill="none" stroke="#ff9c42" stroke-width="6" stroke-linejoin="round" class="flow-line"/>
+              <path d="M 300 10 L 245 78 L 266 88 L 228 112" fill="none" stroke="#ff9c42" stroke-width="6" stroke-linejoin="round" class="flow-line"/>
+              <path d="M 410 340 L 334 268 L 352 254 L 316 232" fill="none" stroke="#ff9c42" stroke-width="6" stroke-linejoin="round" class="flow-line"/>
+
+              <text x="210" y="205" text-anchor="middle" fill="#e8fbf9" font-family="Space Grotesk" font-size="34" font-weight="700">Правила</text>
+              <text x="210" y="248" text-anchor="middle" fill="#66f7e8" font-family="Space Grotesk" font-size="34" font-weight="700">Среды</text>
+              <text id="s10-shield-log" x="210" y="294" text-anchor="middle" fill="#92c8cf" font-family="JetBrains Mono" font-size="11.5">CLICK VECTOR TO TEST SHIELD</text>
+            </svg>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:28px;">
+            <div class="hud-panel amber vector-card interactive-card anim" style="--d:2" data-attack="DUPLICATES → 1-to-1 Kuhn: 0 pts (FP)">
+              <div class="panel-label"><span>VECTOR 02 // DUPLICATES</span><span class="led amber"></span></div>
+              <h4>Отправка дублей</h4>
+              <p><strong class="text-cyan">Защита:</strong> Матчинг 1-к-1: любые повторы считаются <strong>False Positive (0 баллов)</strong>.</p>
+            </div>
+            <div class="hud-panel amber vector-card interactive-card anim" style="--d:3" data-attack="BLIND GUESS → Blocked: Invalid evidence_ids">
+              <div class="panel-label"><span>VECTOR 03 // BLIND GUESS</span><span class="led amber"></span></div>
+              <h4>Слепое угадывание ID</h4>
+              <p><strong class="text-cyan">Защита:</strong> Блокируется строгим требованием валидного массива доказательств (<span class="mono text-cyan">evidence_ids</span>).</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 11: TESTING POLICIES + REAL MEASURED BENCHMARKS
+           ============================================================ -->
+      <section class="slide" data-title="Политики тестирования среды" data-code="SYS-11 // BENCHMARKS">
+        <div class="slide-header">
+          <h2 class="slide-title">Политики тестирования среды</h2>
+          <span class="slide-tag">MEASURED HELD-OUT EVAL // 20 EPISODES</span>
+        </div>
+        <div class="s11-layout">
+          <div class="policy-stack">
+            <div class="hud-panel policy-row anim" style="--d:0">
+              <div class="mono text-cyan" style="font-size:34px;text-align:center;">⚄</div>
+              <div class="policy-name">Random Explorer</div>
+              <div class="policy-desc">Случайный агент без логики сверки</div>
+              <div class="policy-metrics">
+                <span>F1: <strong class="text-amber">0.100</strong></span>
+                <span>Return: <strong class="text-amber">-0.802</strong></span>
+              </div>
+            </div>
+            <div class="hud-panel policy-row anim" style="--d:1">
+              <div class="mono text-cyan" style="font-size:34px;text-align:center;">⚙</div>
+              <div class="policy-name">Simple Check</div>
+              <div class="policy-desc">Алгоритм базовой бухгалтерской сверки</div>
+              <div class="policy-metrics">
+                <span>F1: <strong class="text-green">1.000</strong></span>
+                <span>Return: <strong class="text-green">+0.968</strong></span>
+              </div>
+            </div>
+            <div class="hud-panel amber policy-row anim" style="--d:2">
+              <div class="mono text-amber" style="font-size:34px;text-align:center;">⚔</div>
+              <div class="policy-name">Attacker</div>
+              <div class="policy-desc">Агент, спамящий ложными ошибками</div>
+              <div class="policy-metrics">
+                <span>F1: <strong class="text-amber">0.003</strong></span>
+                <span>Return: <strong class="text-amber">-0.994</strong></span>
+              </div>
+            </div>
+            <div class="hud-panel green policy-row anim" style="--d:3">
+              <div class="mono text-green" style="font-size:34px;text-align:center;">◉</div>
+              <div class="policy-name">Oracle</div>
+              <div class="policy-desc">Абсолютное знание (верхняя граница награды)</div>
+              <div class="policy-metrics">
+                <span>F1: <strong class="text-green">1.000</strong></span>
+                <span>Return: <strong class="text-green">+1.000</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hud-panel anim" style="--d:4;display:flex;flex-direction:column;justify-content:space-between;padding:24px;">
+            <div class="panel-label"><span>УСЛОВИЯ ТЕСТИРОВАНИЯ</span><span class="led"></span></div>
+            <div class="stat-block">
+              <div class="stat-num">20</div>
+              <div class="stat-label">скрытых eval-эпизодов<br><span class="text-dim" style="font-size:13px;">(5 чистых, 5 со сложными связями)</span></div>
+            </div>
+            <div class="stat-block">
+              <div class="stat-num">20</div>
+              <div class="stat-label">парных проверок инвариантности<br><span class="text-dim" style="font-size:13px;">(смена ID, перестановка строк)</span></div>
+            </div>
+            <div style="text-align:center;padding-top:12px;">
+              <span class="chip green">20/20 INVARIANCE PASS</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 12: EVALUATION CRITERIA (ANIMATED HUD DIAL GAUGES)
+           ============================================================ -->
+      <section class="slide" data-title="Критерии оценки среды" data-code="SYS-12 // 100-PT RUBRIC">
+        <div class="slide-header">
+          <h2 class="slide-title">Критерии оценки среды</h2>
+          <span class="slide-tag">100-POINT VERIFICATION RUBRIC</span>
+        </div>
+        <div class="s12-layout">
+          <div class="gauges-row">
+            <!-- Gauge 1: 25 -->
+            <div class="hud-panel gauge-card anim" style="--d:0">
+              <svg viewBox="0 0 200 144">
+                <path d="M 22 105 A 78 78 0 0 1 178 105" fill="none" stroke="rgba(102,247,232,0.18)" stroke-width="14"/>
+                <path d="M 22 105 A 78 78 0 0 1 76 31" fill="none" stroke="#66f7e8" stroke-width="14"/>
+                <line x1="100" y1="105" x2="100" y2="38" stroke="#66f7e8" stroke-width="3.5" stroke-linecap="round" class="gauge-needle" style="--ang:-38deg;"/>
+                <circle cx="100" cy="105" r="7" fill="#66f7e8"/>
+                <text x="100" y="138" text-anchor="middle" fill="#e8fbf9" font-family="JetBrains Mono" font-size="22" font-weight="700">[25]</text>
+              </svg>
+              <div class="gauge-title">Контракт<br>и изоляция</div>
+              <div class="gauge-desc">Проверка лимитов и отсутствия утечек</div>
+            </div>
+
+            <!-- Gauge 2: 25 -->
+            <div class="hud-panel gauge-card anim" style="--d:1">
+              <svg viewBox="0 0 200 144">
+                <path d="M 22 105 A 78 78 0 0 1 178 105" fill="none" stroke="rgba(102,247,232,0.18)" stroke-width="14"/>
+                <path d="M 22 105 A 78 78 0 0 1 76 31" fill="none" stroke="#66f7e8" stroke-width="14"/>
+                <line x1="100" y1="105" x2="100" y2="38" stroke="#66f7e8" stroke-width="3.5" stroke-linecap="round" class="gauge-needle" style="--ang:-38deg;"/>
+                <circle cx="100" cy="105" r="7" fill="#66f7e8"/>
+                <text x="100" y="138" text-anchor="middle" fill="#e8fbf9" font-family="JetBrains Mono" font-size="22" font-weight="700">[25]</text>
+              </svg>
+              <div class="gauge-title">Данные<br>и эталон</div>
+              <div class="gauge-desc">Бухгалтерские равенства и доказательства</div>
+            </div>
+
+            <!-- Gauge 3: 25 -->
+            <div class="hud-panel gauge-card anim" style="--d:2">
+              <svg viewBox="0 0 200 144">
+                <path d="M 22 105 A 78 78 0 0 1 178 105" fill="none" stroke="rgba(102,247,232,0.18)" stroke-width="14"/>
+                <path d="M 22 105 A 78 78 0 0 1 76 31" fill="none" stroke="#46f59e" stroke-width="14"/>
+                <line x1="100" y1="105" x2="100" y2="38" stroke="#46f59e" stroke-width="3.5" stroke-linecap="round" class="gauge-needle" style="--ang:-38deg;"/>
+                <circle cx="100" cy="105" r="7" fill="#46f59e"/>
+                <text x="100" y="138" text-anchor="middle" fill="#e8fbf9" font-family="JetBrains Mono" font-size="22" font-weight="700">[25]</text>
+              </svg>
+              <div class="gauge-title">Надежность<br>награды</div>
+              <div class="gauge-desc">Устойчивость к FP, атакам и дублям</div>
+            </div>
+
+            <!-- Gauge 4: 15 -->
+            <div class="hud-panel gauge-card anim" style="--d:3">
+              <svg viewBox="0 0 200 144">
+                <path d="M 22 105 A 78 78 0 0 1 178 105" fill="none" stroke="rgba(102,247,232,0.18)" stroke-width="14"/>
+                <path d="M 22 105 A 78 78 0 0 1 54 45" fill="none" stroke="#ff9c42" stroke-width="14"/>
+                <line x1="100" y1="105" x2="100" y2="38" stroke="#ff9c42" stroke-width="3.5" stroke-linecap="round" class="gauge-needle" style="--ang:-56deg;"/>
+                <circle cx="100" cy="105" r="7" fill="#ff9c42"/>
+                <text x="100" y="138" text-anchor="middle" fill="#e8fbf9" font-family="JetBrains Mono" font-size="22" font-weight="700">[15]</text>
+              </svg>
+              <div class="gauge-title">Воспроизвод-<br>имость</div>
+              <div class="gauge-desc">Сохранение результата при смене ID</div>
+            </div>
+
+            <!-- Gauge 5: 10 -->
+            <div class="hud-panel gauge-card anim" style="--d:4">
+              <svg viewBox="0 0 200 144">
+                <path d="M 22 105 A 78 78 0 0 1 178 105" fill="none" stroke="rgba(102,247,232,0.18)" stroke-width="14"/>
+                <path d="M 22 105 A 78 78 0 0 1 40 62" fill="none" stroke="#ff9c42" stroke-width="14"/>
+                <line x1="100" y1="105" x2="100" y2="38" stroke="#ff9c42" stroke-width="3.5" stroke-linecap="round" class="gauge-needle" style="--ang:-68deg;"/>
+                <circle cx="100" cy="105" r="7" fill="#ff9c42"/>
+                <text x="100" y="138" text-anchor="middle" fill="#e8fbf9" font-family="JetBrains Mono" font-size="22" font-weight="700">[10]</text>
+              </svg>
+              <div class="gauge-title">Инженерия</div>
+              <div class="gauge-desc">Запуск одной командой, чистые логи</div>
+            </div>
+          </div>
+
+          <div class="hud-panel anim" style="--d:5;text-align:center;padding:20px 28px;font-size:20px;border-color:var(--cyan);">
+            Жюри оценивает <strong class="text-cyan">корректность среды и оценщика</strong>, а не ранжирует команды по награде их агента.
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 13: AUTONOMOUS OFFLINE SPEC
+           ============================================================ -->
+      <section class="slide" data-title="Спецификация автономного запуска" data-code="SYS-13 // OFFLINE RUNTIME">
+        <div class="slide-header">
+          <h2 class="slide-title">Спецификация автономного запуска</h2>
+          <span class="slide-tag">AIR-GAPPED CONTAINER // ZERO DEPENDENCIES</span>
+        </div>
+        <div class="s13-layout">
+          <div class="hud-panel spec-col anim" style="--d:0">
+            <div class="panel-label"><span>ОГРАНИЧЕНИЯ ОКРУЖЕНИЯ</span><span class="led"></span></div>
+            <div class="spec-item">
+              <strong class="mono text-cyan">Python 3.11+</strong>
+              <small>Pure standard library (0 external deps)</small>
+            </div>
+            <div class="spec-item">
+              <strong>2 CPU-ядра, 4 ГБ RAM</strong>
+              <small>Full verify suite in 2.74 s</small>
+            </div>
+            <div class="spec-item">
+              <strong class="text-amber">Strictly No GPU, No Internet</strong>
+              <small>docker run --network=none</small>
+            </div>
+          </div>
+
+          <!-- Exploded Isometric Blueprint Server Chassis -->
+          <div class="hud-panel s13-center anim" style="--d:1">
+            <svg viewBox="0 0 680 480" style="width:100%;height:100%;">
+              <!-- Exploded software layers -->
+              <polygon points="340,42 520,115 340,188 160,115" fill="rgba(102,247,232,0.10)" stroke="#66f7e8" stroke-width="2"/>
+              <text x="340" y="120" text-anchor="middle" fill="#66f7e8" font-family="JetBrains Mono" font-size="14">CLI · WEB UI · POLICIES</text>
+
+              <polygon points="340,122 520,195 340,268 160,195" fill="rgba(102,247,232,0.08)" stroke="#32cfc2" stroke-width="2"/>
+              <text x="340" y="200" text-anchor="middle" fill="#e8fbf9" font-family="JetBrains Mono" font-size="14">IPC SANDBOX · MATCHER · GENERATOR</text>
+
+              <!-- Server Chassis Base -->
+              <polygon points="340,220 550,305 340,392 130,305" fill="rgba(10,36,48,0.85)" stroke="#66f7e8" stroke-width="2.5"/>
+              <polygon points="130,305 340,392 340,434 130,347" fill="rgba(8,26,36,0.95)" stroke="#66f7e8" stroke-width="2"/>
+              <polygon points="550,305 340,392 340,434 550,347" fill="rgba(6,20,28,0.95)" stroke="#32cfc2" stroke-width="2"/>
+
+              <!-- Vertical bus connectors -->
+              <line x1="340" y1="188" x2="340" y2="220" stroke="#66f7e8" stroke-width="2" class="flow-line"/>
+              <line x1="250" y1="152" x2="250" y2="262" stroke="#66f7e8" stroke-width="1.5" stroke-dasharray="4 4"/>
+              <line x1="430" y1="152" x2="430" y2="262" stroke="#66f7e8" stroke-width="1.5" stroke-dasharray="4 4"/>
+
+              <!-- Side circuit traces -->
+              <path d="M 10 115 L 160 115" stroke="#66f7e8" stroke-width="1.8" class="flow-line"/>
+              <path d="M 10 240 L 130 305" stroke="#66f7e8" stroke-width="1.8" class="flow-line"/>
+              <path d="M 520 115 L 670 115" stroke="#66f7e8" stroke-width="1.8" class="flow-line"/>
+              <path d="M 520 195 L 670 195" stroke="#66f7e8" stroke-width="1.8" class="flow-line"/>
+              <path d="M 550 305 L 670 305" stroke="#66f7e8" stroke-width="1.8" class="flow-line"/>
+            </svg>
+            <div class="offline-stamp">OFFLINE VERIFIED ✓</div>
+          </div>
+
+          <div class="hud-panel spec-col anim" style="--d:2">
+            <div class="panel-label"><span>СОСТАВ ПАКЕТА</span><span class="led green"></span></div>
+            <div class="spec-item">Исходный код<small>генератор + среда + eval_worker</small></div>
+            <div class="spec-item">Matcher и тесты<small>61/61 unittest PASS</small></div>
+            <div class="spec-item"><span class="mono text-cyan">trajectories.jsonl</span><small>без утечек (leak-scanned)</small></div>
+            <div class="spec-item">Адаптеры политик<small>Oracle, Simple, Random, Attacker</small></div>
+            <div class="spec-item">Demo-скрипт<small>python3 -m audit_rl verify</small></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SLIDE 14: BUILD STRATEGY ROADMAP
+           ============================================================ -->
+      <section class="slide" data-title="Стратегия сборки" data-code="SYS-14 // ROADMAP">
+        <div class="slide-header">
+          <h2 class="slide-title">Стратегия сборки</h2>
+          <span class="slide-tag">3-PHASE EXECUTION // ASTANA FINAL</span>
+        </div>
+        <div class="s14-layout">
+          <!-- Organizers Advice (clean upper-left) -->
+          <div class="hud-panel amber anim" style="--d:0;position:absolute;top:8px;left:18px;width:540px;z-index:5;padding:18px 24px;">
+            <div class="panel-label"><span>СОВЕТ ОРГАНИЗАТОРОВ</span><span class="led amber"></span></div>
+            <p style="font-size:16px;color:var(--text-hi);line-height:1.5;">
+              Не тратьте время на лишний UI или обучение тяжелой RL-модели. <strong>Фокус на архитектуре среды, инвариантах и чистоте данных.</strong>
+            </p>
+          </div>
+
+          <!-- Final Deadline Beacon (clean upper-right) -->
+          <div class="hud-panel anim" style="--d:4;position:absolute;top:8px;right:18px;width:330px;z-index:5;text-align:center;padding:20px 20px;border-color:var(--cyan);box-shadow:0 0 38px rgba(102,247,232,0.22);">
+            <div class="panel-label" style="justify-content:center;"><span>TARGET MILESTONE</span></div>
+            <div style="font-family:var(--font-display);font-size:25px;font-weight:700;color:var(--text-hi);line-height:1.3;">
+              Дедлайн:<br><span class="text-cyan">22 ноября 2026</span><br>23:59
+            </div>
+            <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(102,247,232,0.2);font-size:17px;color:var(--green);font-weight:600;">
+              Офлайн-финал в Астане
+            </div>
+          </div>
+
+          <!-- Ascending Glowing Bridge SVG -->
+          <svg viewBox="0 0 1516 620" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;">
+            <!-- Bridge rails flowing cleanly toward TARGET MILESTONE -->
+            <path d="M 40 520 L 380 430 L 470 375 L 740 300 L 840 245 L 1160 155" fill="none" stroke="#66f7e8" stroke-width="4" class="flow-line"/>
+            <path d="M 80 540 L 420 450 L 510 395 L 780 320 L 880 265 L 1160 185" fill="none" stroke="#32cfc2" stroke-width="2.2"/>
+            <!-- Pylons -->
+            <g fill="rgba(102,247,232,0.20)" stroke="#66f7e8" stroke-width="2">
+              <rect x="255" y="340" width="36" height="125"/>
+              <rect x="650" y="210" width="38" height="145"/>
+              <rect x="1005" y="100" width="40" height="135"/>
+            </g>
+            <!-- Pylon glowing tops -->
+            <circle cx="273" cy="340" r="8" fill="#66f7e8"/>
+            <circle cx="669" cy="210" r="9" fill="#66f7e8"/>
+            <circle cx="1025" cy="100" r="10" fill="#46f59e"/>
+          </svg>
+
+          <!-- 3 Phase Cards (clean percentage layout for any fullscreen resolution) -->
+          <div class="hud-panel phase-box anim" style="--d:1;left:2%;bottom:3%;">
+            <h4>ФАЗА 01 // CORE</h4>
+            <p>Контракт среды + <strong class="text-amber">2 типа ошибок</strong></p>
+          </div>
+          <div class="hud-panel phase-box anim" style="--d:2;left:36%;bottom:10%;">
+            <h4>ФАЗА 02 // COVERAGE</h4>
+            <p>Все <strong class="text-amber">4 типа ошибок</strong> + <strong class="text-green">чистые компании</strong></p>
+          </div>
+          <div class="hud-panel green phase-box anim" style="--d:3;right:2%;bottom:20%;width:min(350px, 26vw);">
+            <h4>ФАЗА 03 // HARDENING</h4>
+            <p><strong class="text-amber">Взаимодействующие ошибки</strong> и <strong class="text-green">защита от атак</strong></p>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Bottom Navigation HUD Bar -->
+    <footer class="hud-bottombar">
+      <div class="nav-controls">
+        <button class="hud-btn" id="btn-prev" style="padding:9px 16px;font-size:13px;">◂ НАЗАД</button>
+        <div class="slide-counter" id="slide-counter">01 / 14</div>
+      </div>
+      <div class="progress-track" id="progress-track"></div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div class="slide-hint">← / → · [G] СЕТКА · [F] ЭКРАН</div>
+        <button class="btn-primary-hud" id="btn-next">
+          <span id="btn-next-label">ДАЛЕЕ</span>
+          <span class="chev">▸</span>
+        </button>
+      </div>
+    </footer>
+
+    <!-- Slide Overview Mosaic Modal -->
+    <div id="overview-modal">
+      <div class="ov-header">
+        <div class="mono text-cyan" style="font-size:18px;letter-spacing:0.14em;">SLIDE MATRIX OVERVIEW // SELECT MODULE</div>
+        <button class="hud-btn" id="btn-close-ov">CLOSE [ESC]</button>
+      </div>
+      <div class="ov-grid" id="ov-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Floating Cyber-HUD Hover Summary Tooltip -->
+<div id="hud-tooltip" role="tooltip">
+  <div class="tip-head"><span class="led" style="width:6px;height:6px;"></span><span id="tip-title">MODULE</span></div>
+  <div class="tip-body" id="tip-body"></div>
+</div>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const progressTrack = document.getElementById('progress-track');
+  const slideCounter = document.getElementById('slide-counter');
+  const statusText = document.getElementById('status-text');
+  const scanSweep = document.getElementById('scan-sweep');
+  const overviewModal = document.getElementById('overview-modal');
+  const ovGrid = document.getElementById('ov-grid');
+
+  let current = 0;
+  let soundOn = false;
+  let audioCtx = null;
+  let isAnimating = false;
+
+  // 1. Full-Viewport Edge-to-Edge Canvas & Stage Fit
+  const bgCanvas = document.getElementById('bg-canvas');
+  function fitStage() {
+    stage.style.transform = '';
+    if (bgCanvas) {
+      bgCanvas.width = window.innerWidth;
+      bgCanvas.height = window.innerHeight;
+    }
+  }
+  window.addEventListener('resize', fitStage);
+  fitStage();
+
+  // 2. Optional Synthesized Sci-Fi HUD Sound FX (Zero external audio files!)
+  function playHudTone(type = 'step') {
+    if (!soundOn) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      if (type === 'step') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(520, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+        gain.gain.setValueAtTime(0.045, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+        osc.start(now);
+        osc.stop(now + 0.15);
+      } else {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(660, now);
+        gain.gain.setValueAtTime(0.03, now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+        osc.start(now);
+        osc.stop(now + 0.08);
+      }
+    } catch (_) {}
+  }
+
+  // 3. Populate Slide 1 Buffer Grid (24 cells, 15 active)
+  const bufGrid = document.getElementById('s1-buffer-grid');
+  if (bufGrid) {
+    for (let i = 0; i < 24; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'b-cell' + (i < 15 ? ' on' : '');
+      bufGrid.appendChild(cell);
+    }
+    setInterval(() => {
+      const cells = bufGrid.children;
+      const idx = Math.floor(Math.random() * 6) + 12;
+      if (cells[idx]) cells[idx].classList.toggle('on');
+    }, 900);
+  }
+
+  // 4. Build Progress Bar & Overview Mosaic
+  slides.forEach((s, idx) => {
+    const seg = document.createElement('div');
+    seg.className = 'progress-seg' + (idx === 0 ? ' active' : '');
+    seg.title = `${String(idx + 1).padStart(2, '0')} — ${s.dataset.title || ''}`;
+    seg.addEventListener('click', () => goTo(idx));
+    progressTrack.appendChild(seg);
+
+    const card = document.createElement('div');
+    card.className = 'ov-card' + (idx === 0 ? ' current' : '');
+    card.innerHTML = `
+      <div class="ov-num">SLIDE ${String(idx + 1).padStart(2, '0')}</div>
+      <div class="ov-title">${s.dataset.title || ''}</div>
+      <div class="ov-sub">${s.dataset.code || ''}</div>
+    `;
+    card.addEventListener('click', () => {
+      toggleOverview(false);
+      goTo(idx);
+    });
+    ovGrid.appendChild(card);
+  });
+
+  // 5. Smooth Slide Transition Controller
+  function goTo(target) {
+    if (target < 0 || target >= slides.length || target === current) return;
+    const dir = target > current ? 1 : -1;
+    const oldSlide = slides[current];
+    const newSlide = slides[target];
+
+    // Trigger holographic sweep beam
+    scanSweep.classList.remove('sweeping');
+    void scanSweep.offsetWidth;
+    scanSweep.classList.add('sweeping');
+
+    oldSlide.classList.remove('active', 'prev-exit', 'next-exit');
+    oldSlide.classList.add(dir > 0 ? 'prev-exit' : 'next-exit');
+
+    newSlide.classList.remove('prev-exit', 'next-exit');
+    newSlide.style.transform = dir > 0 ? 'translateX(64px) scale(0.975)' : 'translateX(-64px) scale(0.975)';
+    void newSlide.offsetWidth;
+    newSlide.style.transform = '';
+    newSlide.classList.add('active');
+
+    current = target;
+    updateChrome();
+    playHudTone('step');
+
+    if (current === 6) replayTrajectory();
+  }
+
+  function updateChrome() {
+    slideCounter.textContent = `${String(current + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')}`;
+    statusText.textContent = slides[current].dataset.code || 'MATRIX ONLINE';
+    Array.from(progressTrack.children).forEach((seg, i) => {
+      seg.classList.toggle('active', i === current);
+      seg.classList.toggle('visited', i < current);
+    });
+    Array.from(ovGrid.children).forEach((card, i) => {
+      card.classList.toggle('current', i === current);
+    });
+  }
+
+  // Navigation buttons
+  const btnNextLabel = document.getElementById('btn-next-label');
+  document.getElementById('btn-prev').addEventListener('click', () => goTo(current - 1));
+  document.getElementById('btn-next').addEventListener('click', () => {
+    if (current === slides.length - 1) goTo(0);
+    else goTo(current + 1);
+  });
+  document.getElementById('btn-hero-start')?.addEventListener('click', () => goTo(1));
+
+  // Update ДАЛЕЕ / В НАЧАЛО dynamically
+  const origUpdateChrome = updateChrome;
+  updateChrome = function() {
+    origUpdateChrome();
+    if (btnNextLabel) {
+      btnNextLabel.textContent = current === slides.length - 1 ? '↺ В НАЧАЛО' : 'ДАЛЕЕ';
+    }
+  };
+
+  // =========================================================
+  // TACTILE INTERACTIVITY: SPOTLIGHT, 3D TILT, RIPPLE & SWIPE
+  // =========================================================
+  document.querySelectorAll('.hud-panel').forEach(panel => {
+    panel.addEventListener('mousemove', (e) => {
+      const r = panel.getBoundingClientRect();
+      const x = ((e.clientX - r.left) / r.width) * 100;
+      const y = ((e.clientY - r.top) / r.height) * 100;
+      panel.style.setProperty('--mx', `${x.toFixed(1)}%`);
+      panel.style.setProperty('--my', `${y.toFixed(1)}%`);
+      // Subtle 3D tilt on smaller/medium cards
+      if (r.width < 680 && r.height < 520) {
+        const rx = ((y - 50) / 50) * -2.6;
+        const ry = ((x - 50) / 50) * 2.6;
+        panel.style.transform = `perspective(900px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) translateY(-2px)`;
+      }
+    });
+    panel.addEventListener('mouseleave', () => {
+      panel.style.transform = '';
+    });
+  });
+
+  // Sonar click ripple anywhere on buttons / interactive cards
+  document.addEventListener('click', (e) => {
+    const target = e.target.closest('button, .interactive-card, .progress-seg, .ov-card, .quad-card, .venn-center');
+    if (!target) return;
+    const ripple = document.createElement('div');
+    ripple.className = 'hud-ripple' + (target.classList.contains('amber') || target.dataset.vault || target.dataset.attack ? ' amber' : '');
+    ripple.style.left = `${e.clientX}px`;
+    ripple.style.top = `${e.clientY}px`;
+    document.body.appendChild(ripple);
+    setTimeout(() => ripple.remove(), 580);
+  });
+
+  // Touch swipe navigation
+  let touchStartX = 0;
+  window.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; }, { passive: true });
+  window.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 55) goTo(current + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+
+  // Ambient interactive cyber-particle background (full-viewport dynamic!)
+  const canvas = document.getElementById('bg-canvas');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    const pts = Array.from({ length: 48 }, () => ({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: (Math.random() - 0.5) * 0.4,
+      r: Math.random() * 1.8 + 0.9
+    }));
+    let mouse = { x: -999, y: -999 };
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+    function tickParticles() {
+      const W = canvas.width;
+      const H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+      for (const p of pts) {
+        const dx = p.x - mouse.x;
+        const dy = p.y - mouse.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 150 && dist > 1) {
+          p.x += (dx / dist) * 1.5;
+          p.y += (dy / dist) * 1.5;
+        }
+        p.x = (p.x + p.vx + W) % W;
+        p.y = (p.y + p.vy + H) % H;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(102, 247, 232, 0.48)';
+        ctx.fill();
+      }
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          const d = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+          if (d < 135) {
+            ctx.beginPath();
+            ctx.moveTo(pts[i].x, pts[i].y);
+            ctx.lineTo(pts[j].x, pts[j].y);
+            ctx.strokeStyle = `rgba(102, 247, 232, ${(1 - d / 135) * 0.14})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        }
+      }
+      requestAnimationFrame(tickParticles);
+    }
+    tickParticles();
+  }
+
+  // =========================================================
+  // CYBER-HUD HOVER SUMMARY TOOLTIPS OVER EVERY INTERACTIVE
+  // =========================================================
+  const hudTip = document.getElementById('hud-tooltip');
+  const tipTitle = document.getElementById('tip-title');
+  const tipBody = document.getElementById('tip-body');
+
+  function showTip(el, title, body, tone = 'cyan') {
+    tipTitle.textContent = title;
+    tipBody.textContent = body;
+    hudTip.classList.toggle('amber', tone === 'amber');
+    hudTip.classList.add('show');
+
+    const rect = el.getBoundingClientRect();
+    const tipRect = hudTip.getBoundingClientRect();
+    let left = rect.left + rect.width / 2;
+    let top = rect.top - tipRect.height - 12;
+
+    // Flip below if near top edge
+    if (top < 14) top = rect.bottom + 12;
+    // Clamp horizontally
+    const half = tipRect.width / 2 + 12;
+    left = Math.max(half, Math.min(window.innerWidth - half, left));
+
+    hudTip.style.left = `${left}px`;
+    hudTip.style.top = `${top}px`;
+  }
+  function hideTip() {
+    hudTip.classList.remove('show');
+  }
+
+  function bindTips(entries) {
+    entries.forEach(([sel, title, body, tone]) => {
+      document.querySelectorAll(sel).forEach(el => {
+        el.addEventListener('mouseenter', () => showTip(el, title, body, tone));
+        el.addEventListener('mouseleave', hideTip);
+        el.addEventListener('mousedown', hideTip);
+      });
+    });
+  }
+
+  bindTips([
+    // Global chrome
+    ['#btn-sound', 'HUD AUDIO // SFX', 'Включает или выключает синтезированные sci-fi звуки переходов и кликов (WebAudio, офлайн).'],
+    ['#btn-overview', 'СЕТКА СЛАЙДОВ [G]', 'Открывает матрицу всех 14 слайдов для мгновенного перехода к любому разделу.'],
+    ['#btn-fs', 'ПОЛНЫЙ ЭКРАН [F]', 'Разворачивает браузер в полноэкранный режим для демонстрации на проекторе.'],
+    ['#btn-prev', 'НАВИГАЦИЯ // НАЗАД', 'Перейти к предыдущему слайду (клавиша ←).'],
+    ['#btn-next', 'НАВИГАЦИЯ // ДАЛЕЕ', 'Перейти к следующему слайду с голографическим сканером (клавиша → или Space).'],
+    // Slide 1
+    ['#btn-hero-start', 'СТАРТ ПРЕЗЕНТАЦИИ', 'Нажмите, чтобы перейти к архитектуре изоляции модулей (слайд 2).'],
+    ['#s1-port-list .port-item', 'PORT ARRAY // ИНТЕРАКТИВ', 'Кликните на порт, чтобы переключить его статус LINKED / STANDBY в реальном времени.'],
+    ['.s1-buffer', 'MEMORY BUFFER', 'Потребление памяти в рамках лимита 4 ГБ RAM (чистый CPU, без GPU).'],
+    ['.s1-power', 'POWER BUS // RUNTIME', 'Среда работает на чистом Python 3.11 stdlib без внешних зависимостей.'],
+    // Slide 2
+    ['#btn-test-leak', 'СИМУЛЯЦИЯ УТЕЧКИ', 'Нажмите, чтобы проверить, как IPC-граница блокирует попытку агента прочитать truth.json.', 'amber'],
+    ['.agent-node', 'ИИ-АГЕНТ (SANDBOX)', 'Взаимодействует со средой строго через узкий контракт SubprocessAuditEnv.'],
+    // Slide 3
+    ['[data-file="manifest"]', 'MANIFEST.JSON // КЛИК', 'Нажмите, чтобы увидеть реальный пример метаданных компании и отчётного периода.'],
+    ['[data-file="ledger"]', 'LEDGER.CSV // КЛИК', 'Нажмите для просмотра строки главной книги (двойная запись ∑D == ∑C).'],
+    ['[data-file="invoices"]', 'INVOICES.JSONL // КЛИК', 'Нажмите для просмотра примера инвойса из реестра первичных документов.'],
+    ['[data-file="payments"]', 'PAYMENTS.JSONL // КЛИК', 'Нажмите для просмотра примера платежа и его распределения по счетам.'],
+    ['[data-file="fx"]', 'FX.CSV // КЛИК', 'Нажмите для просмотра официального валютного курса на дату операции.'],
+    ['[data-file="policy"]', 'POLICY.JSON // КЛИК', 'Нажмите для просмотра правил учёта, допустимой погрешности и лимита шагов.'],
+    ['[data-vault]', 'ЗАКРЫТЫЙ СЕЙФ // КЛИК', 'Скрыто за Visibility Line в отдельном процессе eval_worker.py. Кликните для проверки защиты.', 'amber'],
+    // Slide 4
+    ['[data-err="dup"]', 'DUPLICATES // КЛИК', 'Нажмите, чтобы увидеть сценарий дубля инвойсов и ложные дистракторы (подписки).', 'amber'],
+    ['[data-err="alloc"]', 'ALLOCATION // КЛИК', 'Нажмите, чтобы увидеть сценарий неполной/ошибочной аллокации платежа.', 'amber'],
+    ['[data-err="fx"]', 'FX / TIME // КЛИК', 'Нажмите, чтобы увидеть сценарий ошибки валютного курса и проверки AST Decimal.', 'amber'],
+    ['[data-err="cutoff"]', 'CUT-OFF // КЛИК', 'Нажмите, чтобы увидеть сценарий смещения операции между отчётными периодами.', 'amber'],
+    ['[data-err="inter"]', 'ВЗАИМОДЕЙСТВУЮЩИЕ ОШИБКИ', 'Нажмите, чтобы увидеть составные аномалии, затрагивающие сразу 3+ документа.'],
+    // Slide 5
+    ['#btn-s5-step', 'ТЕСТОВЫЙ ШАГ STEP()', 'Кликните, чтобы симулировать 1 шаг агента в среде: счётчик шагов растёт, промежуточная награда = 0.'],
+    // Slide 6
+    ['.tool-card', 'ИНСТРУМЕНТ АГЕНТА', 'Единственный разрешённый способ чтения данных и расчётов внутри 100-шагового бюджета.'],
+    ['.ban-badge', 'ЗАПРЕЩЁННЫЙ ВЕКТОР', 'Полностью отключено на уровне архитектуры среды: никакой оболочки, SQL или сети.', 'amber'],
+    // Slide 7
+    ['#btn-replay-traj', 'ПОВТОР ТРАЕКТОРИИ', 'Нажмите, чтобы заново проиграть цепочку шагов от reset() до submit().'],
+    ['.traj-node', 'ЭТАП РАССЛЕДОВАНИЯ', 'Часть записанной траектории trajectories.jsonl (проверено: 0 утечек truth/seed).'],
+    // Slide 8
+    ['#s8-checklist li', 'КРИТЕРИЙ MATCHER // КЛИК', 'Нажмите, чтобы отключить/включить критерий и увидеть, как меняется вердикт MATCH ↔ MISMATCH.'],
+    // Slide 9
+    ['[data-preset="oracle"]', 'ПРЕСЕТ: ORACLE', 'Подставляет идеальные метрики оракула (P=1.0, R=1.0, 1 шаг → Reward +0.998).'],
+    ['[data-preset="simple"]', 'ПРЕСЕТ: SIMPLE CHECK', 'Подставляет реальный замер базовой сверки (P=1.0, R=1.0, 17 шагов → Reward +0.966).'],
+    ['[data-preset="attacker"]', 'ПРЕСЕТ: ATTACKER', 'Подставляет атакующего агента (P=0.01, R=0.03 → Reward -0.978).', 'amber'],
+    ['#sim-p', 'PRECISION (ТОЧНОСТЬ)', 'Потяните ползунок: доля верных находок среди всех отправленных агентом.'],
+    ['#sim-r', 'RECALL (ПОЛНОТА)', 'Потяните ползунок: доля найденных реальных ошибок из скрытого эталона.'],
+    ['#sim-s', 'STEPS (ЛИМИТ ШАГОВ)', 'Потяните ползунок: штраф 0.002 за каждый шаг, различающий равных по F1 агентов.', 'amber'],
+    // Slide 10
+    ['[data-attack]', 'ВЕКТОР АТАКИ // КЛИК', 'Нажмите, чтобы запустить атаку на центральный щит и увидеть результат блокировки.', 'amber'],
+    // Slide 11
+    ['.policy-row', 'БЕНЧМАРК ПОЛИТИКИ', 'Реально измеренные результаты на 20 скрытых eval-эпизодах в SubprocessAuditEnv.'],
+    // Slide 12
+    ['.gauge-card', 'КРИТЕРИЙ ЖЮРИ (100 Б.)', 'Вес данного критерия в итоговой 100-балльной верификации среды.'],
+    // Slide 13
+    ['.offline-stamp', 'OFFLINE VERIFIED ✓', 'Пройдено 61/61 тестов, 20/20 проверок инвариантности, 0 утечек за 2.74 сек.'],
+    // Slide 14
+    ['.phase-box', 'ЭТАП СБОРКИ', 'Пошаговая стратегия разработки: сначала контракт и данные, затем сложные атаки.']
+  ]);
+
+  // Slide 1: Interactive PORT ARRAY toggles
+  document.querySelectorAll('#s1-port-list .port-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const hex = item.querySelector('.port-hex');
+      const isLinked = hex.classList.toggle('linked');
+      const statusEl = item.lastElementChild;
+      if (isLinked) {
+        statusEl.className = 'led';
+        statusEl.textContent = '';
+      } else {
+        statusEl.className = 'mono text-dim';
+        statusEl.textContent = '○';
+      }
+      const linkedCount = document.querySelectorAll('#s1-port-list .port-hex.linked').length;
+      document.getElementById('s1-port-count').textContent = `${linkedCount} / 6 LINKED`;
+      playHudTone('click');
+    });
+  });
+
+  // Slide 2: Interactive Leak Attack Simulation
+  document.getElementById('btn-test-leak')?.addEventListener('click', () => {
+    const badge = document.getElementById('s2-leak-badge');
+    const txt = document.getElementById('s2-leak-text');
+    badge.textContent = 'BLOCKED · 0 LEAKS';
+    txt.innerHTML = '<strong class="text-amber">АТАКА ОТРАЖЕНА:</strong> Попытка чтения <code>truth.json</code> напрямую из процесса агента заблокирована границей IPC.';
+    badge.parentElement.classList.remove('shake-denied');
+    void badge.parentElement.offsetWidth;
+    badge.parentElement.classList.add('shake-denied');
+    playHudTone('click');
+    setTimeout(() => {
+      badge.textContent = 'ZERO-LEAK GUARANTEE';
+      txt.innerHTML = '<strong>Исключение утечек:</strong> Оценщик работает вне процесса агента. Эталон не утекает через пути, debug info или объяснения награды.';
+    }, 3400);
+  });
+
+  // Slide 3: Public file preview & Locked vault shake
+  const fileSnippets = {
+    manifest: 'manifest.json → {"company_id": "CMP-2026-09", "period": "2026-Q1", "base_ccy": "USD"}',
+    ledger: 'ledger.csv → LED-0318 | 2026-03-15 | DR 1200.00 | CR 1200.00 | ∑D == ∑C',
+    invoices: 'invoices.jsonl → {"id": "INV-0042", "vendor": "Nordic Supply", "amount": "1450.00 EUR"}',
+    payments: 'payments.jsonl → {"id": "PAY-0089", "invoice_id": "INV-0042", "allocated": "1450.00"}',
+    fx: 'fx.csv → 2026-03-15 | EUR/USD | 1.0845 (official reference rate)',
+    policy: 'policy.json → {"tolerance_minor": 1, "cutoff_tz": "UTC", "max_steps": 100}'
+  };
+  document.querySelectorAll('[data-file]').forEach(card => {
+    card.addEventListener('click', () => {
+      const bar = document.getElementById('s3-preview-bar');
+      bar.className = 'mono text-cyan';
+      bar.textContent = fileSnippets[card.dataset.file];
+      playHudTone('click');
+    });
+  });
+  document.querySelectorAll('[data-vault]').forEach(vault => {
+    vault.addEventListener('click', () => {
+      vault.classList.remove('shake-denied');
+      void vault.offsetWidth;
+      vault.classList.add('shake-denied');
+      const bar = document.getElementById('s3-preview-bar');
+      bar.className = 'mono text-amber';
+      bar.textContent = `🔒 ACCESS DENIED: ${vault.dataset.vault} изолирован в eval_worker.py`;
+      playHudTone('click');
+    });
+  });
+
+  // Slide 5: Interactive STEP() simulator
+  let s5Step = 0;
+  document.getElementById('btn-s5-step')?.addEventListener('click', () => {
+    s5Step = s5Step >= 100 ? 1 : s5Step + 1;
+    document.getElementById('s5-step-readout').textContent = `STEP: ${String(s5Step).padStart(2, '0')} / 100 · REWARD: 0.0 (BLIND)`;
+    playHudTone('step');
+  });
+
+  // Slide 8: Interactive 5-point Matcher checklist
+  document.querySelectorAll('#s8-checklist li').forEach(li => {
+    li.addEventListener('click', () => {
+      const on = li.dataset.crit === '1' ? '0' : '1';
+      li.dataset.crit = on;
+      const box = li.querySelector('.check-box');
+      if (on === '1') {
+        box.textContent = '✓';
+        box.style.color = 'var(--green)';
+        box.style.borderColor = 'var(--green)';
+        box.style.background = 'rgba(70, 245, 158, 0.12)';
+      } else {
+        box.textContent = '✗';
+        box.style.color = 'var(--amber)';
+        box.style.borderColor = 'var(--amber)';
+        box.style.background = 'rgba(255, 156, 66, 0.16)';
+      }
+      const allPass = Array.from(document.querySelectorAll('#s8-checklist li')).every(x => x.dataset.crit === '1');
+      const matchBox = document.getElementById('s8-match-box');
+      const misBox = document.getElementById('s8-mismatch-box');
+      matchBox.style.opacity = allPass ? '1' : '0.35';
+      matchBox.style.boxShadow = allPass ? '0 0 34px rgba(70,245,158,0.32)' : 'none';
+      misBox.style.opacity = allPass ? '0.42' : '1';
+      misBox.style.boxShadow = allPass ? 'none' : '0 0 34px rgba(255,156,66,0.38)';
+      playHudTone('click');
+    });
+  });
+
+  // Slide 9: Quick Policy Presets
+  const presets = {
+    oracle: { p: 100, r: 100, s: 1 },
+    simple: { p: 100, r: 100, s: 17 },
+    attacker: { p: 1, r: 3, s: 4 }
+  };
+  document.querySelectorAll('[data-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pr = presets[btn.dataset.preset];
+      simP.value = pr.p;
+      simR.value = pr.r;
+      simS.value = pr.s;
+      updateSim();
+      playHudTone('step');
+    });
+  });
+
+  // Slide 10: Interactive Anti-Gaming Shield Deflection
+  document.querySelectorAll('[data-attack]').forEach(card => {
+    card.addEventListener('click', () => {
+      const shield = document.getElementById('s10-shield');
+      const log = document.getElementById('s10-shield-log');
+      shield.classList.remove('shield-flash');
+      void shield.offsetWidth;
+      shield.classList.add('shield-flash');
+      log.textContent = card.dataset.attack;
+      log.setAttribute('fill', '#ff9c42');
+      playHudTone('click');
+    });
+  });
+
+  // Overview toggle
+  function toggleOverview(force) {
+    const open = typeof force === 'boolean' ? force : !overviewModal.classList.contains('open');
+    overviewModal.classList.toggle('open', open);
+    playHudTone('click');
+  }
+  document.getElementById('btn-overview').addEventListener('click', () => toggleOverview());
+  document.getElementById('btn-close-ov').addEventListener('click', () => toggleOverview(false));
+
+  // Sound toggle
+  const btnSound = document.getElementById('btn-sound');
+  btnSound.addEventListener('click', () => {
+    soundOn = !soundOn;
+    btnSound.textContent = soundOn ? 'SFX: ON' : 'SFX: OFF';
+    btnSound.classList.toggle('active', soundOn);
+    if (soundOn) playHudTone('step');
+  });
+
+  // Fullscreen toggle
+  document.getElementById('btn-fs').addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  });
+
+  // Keyboard controls
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === 'Escape') { toggleOverview(false); return; }
+    if (e.key.toLowerCase() === 'g') { toggleOverview(); return; }
+    if (e.key.toLowerCase() === 'f') { document.getElementById('btn-fs').click(); return; }
+    if (e.key.toLowerCase() === 's') { btnSound.click(); return; }
+    if (overviewModal.classList.contains('open')) return;
+
+    if (['ArrowRight', ' ', 'PageDown', 'Enter'].includes(e.key)) {
+      e.preventDefault();
+      goTo(current + 1);
+    } else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) {
+      e.preventDefault();
+      goTo(current - 1);
+    } else if (e.key === 'Home') {
+      goTo(0);
+    } else if (e.key === 'End') {
+      goTo(slides.length - 1);
+    }
+  });
+
+  // Mouse wheel navigation (debounced)
+  let wheelLock = 0;
+  window.addEventListener('wheel', (e) => {
+    if (overviewModal.classList.contains('open')) return;
+    const now = Date.now();
+    if (now - wheelLock < 550) return;
+    if (Math.abs(e.deltaY) > 25) {
+      wheelLock = now;
+      goTo(current + (e.deltaY > 0 ? 1 : -1));
+    }
+  }, { passive: true });
+
+  // 6. Slide 4 Interactive Discrepancy Inspector
+  const errInfo = {
+    dup: {
+      tag: 'DUPLICATE_INVOICE',
+      text: 'Два инвойса с идентичным контрагентом/суммой и двойной проводкой. Дистрактор: легитимные регулярные подписки с одинаковой суммой.'
+    },
+    alloc: {
+      tag: 'PAYMENT_ALLOCATION_MISMATCH',
+      text: 'Платёж распределён частично или на неверный счёт. Дистрактор: законные split-платежи и возвраты (credit notes).'
+    },
+    fx: {
+      tag: 'FX_CONVERSION_ERROR',
+      text: 'Использован курс не на дату операции или неверная валютная пара. Проверяется точным AST Decimal калькулятором.'
+    },
+    cutoff: {
+      tag: 'PERIOD_CUTOFF_ERROR',
+      text: 'Операция проведена в чужом отчётном периоде. Дистрактор: валидные граничные даты (23:59 последнего дня периода).'
+    },
+    inter: {
+      tag: 'INTERACTING SCENARIOS (2)',
+      text: 'Составные аномалии: fx_period_partial_payment и duplicate_invoice_fx_mismatch — требуют многошаговой сверки 3+ документов.'
+    }
+  };
+  document.querySelectorAll('[data-err]').forEach(el => {
+    el.addEventListener('click', () => {
+      document.querySelectorAll('[data-err]').forEach(x => x.classList.remove('selected'));
+      el.classList.add('selected');
+      const d = errInfo[el.dataset.err];
+      document.getElementById('s4-ins-tag').textContent = d.tag;
+      document.getElementById('s4-ins-text').textContent = d.text;
+      playHudTone('click');
+    });
+  });
+
+  // 7. Slide 7 Trajectory Replay Animation
+  let trajTimer = null;
+  function replayTrajectory() {
+    clearInterval(trajTimer);
+    const nodes = Array.from(document.querySelectorAll('#traj-steps .traj-node'));
+    nodes.forEach(n => n.classList.remove('lit'));
+    let idx = 0;
+    trajTimer = setInterval(() => {
+      if (idx < nodes.length) {
+        nodes[idx].classList.add('lit');
+        idx++;
+      } else {
+        clearInterval(trajTimer);
+      }
+    }, 340);
+  }
+  document.getElementById('btn-replay-traj')?.addEventListener('click', () => {
+    playHudTone('click');
+    replayTrajectory();
+  });
+
+  // 8. Slide 9 Live Terminal Reward Simulator
+  const simP = document.getElementById('sim-p');
+  const simR = document.getElementById('sim-r');
+  const simS = document.getElementById('sim-s');
+  function updateSim() {
+    const p = Number(simP.value) / 100;
+    const r = Number(simR.value) / 100;
+    const s = Number(simS.value);
+    const f1 = (p + r) > 0 ? (2 * p * r) / (p + r) : 0;
+    const raw = 2 * f1 - 1 - 0.002 * s;
+    const rew = Math.max(-1, Math.min(1, raw));
+
+    document.getElementById('val-p').textContent = p.toFixed(2);
+    document.getElementById('val-r').textContent = r.toFixed(2);
+    document.getElementById('val-s').textContent = s;
+    document.getElementById('out-f1').textContent = f1.toFixed(3);
+    const outRew = document.getElementById('out-rew');
+    outRew.textContent = (rew >= 0 ? '+' : '') + rew.toFixed(3);
+    outRew.style.color = rew >= 0.5 ? 'var(--green)' : (rew >= 0 ? 'var(--cyan)' : 'var(--amber)');
+
+    // Update SVG curve & glowing dot
+    const y0 = 96 - ((Math.max(-1, Math.min(1, 2 * f1 - 1)) + 1) / 2) * 76;
+    const y100 = 96 - ((Math.max(-1, Math.min(1, 2 * f1 - 1 - 0.2)) + 1) / 2) * 76;
+    document.getElementById('sim-curve').setAttribute('d', `M 20 ${y0.toFixed(1)} L 260 ${y100.toFixed(1)}`);
+    const dotX = 20 + (s / 100) * 240;
+    const dotY = y0 + (s / 100) * (y100 - y0);
+    document.getElementById('sim-dot').setAttribute('cx', dotX.toFixed(1));
+    document.getElementById('sim-dot').setAttribute('cy', dotY.toFixed(1));
+  }
+  [simP, simR, simS].forEach(inp => inp?.addEventListener('input', updateSim));
+  updateSim();
+})();
+</script>
+</body>
+</html>
