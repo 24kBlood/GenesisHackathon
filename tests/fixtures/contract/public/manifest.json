@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "episode_id": "ep-cf50625d",
+  "base_currency": "KZT",
+  "period_start": "2026-11-01T00:00:00+05:00",
+  "period_end": "2026-12-01T00:00:00+05:00",
+  "timezone": "Asia/Almaty",
+  "record_counts": {"ledger": 4, "invoices": 1, "payments": 1, "fx": 1},
+  "document_count": 2,
+  "currency_exponents": {"KZT": 2, "USD": 2},
+  "rounding_mode": "ROUND_HALF_EVEN"
+}

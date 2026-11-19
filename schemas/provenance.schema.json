@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/provenance.schema.json",
+  "title": "Private generation history and causal changes",
+  "type": "object",
+  "properties": {
+    "episode_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "seed": {
+      "type": "integer"
+    },
+    "config": {
+      "$ref": "config.schema.json"
+    },
+    "initial_history": {
+      "type": "object"
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "change_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "issue_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "affected_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "minItems": 1
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "change_id",
+          "issue_id",
+          "affected_ids",
+          "before",
+          "after"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "episode_id",
+    "seed",
+    "config",
+    "initial_history",
+    "changes"
+  ],
+  "additionalProperties": false
+}

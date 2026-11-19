@@ -1,0 +1,24 @@
+{
+  "episode_id": "ep-cf50625d",
+  "seed": 164285,
+  "config": {
+    "schema_version": "1.0.0",
+    "error_counts": {"fx_conversion": 1},
+    "include_distractors": false
+  },
+  "initial_history": {
+    "invoice_id": "inv-50dc",
+    "payment_id": "pay-165c",
+    "expected_settlement_minor": 4950000,
+    "expected_residual_minor": 0
+  },
+  "changes": [
+    {
+      "change_id": "change-bd04",
+      "issue_id": "issue-e589",
+      "affected_ids": ["row-cca24", "row-b862c"],
+      "before": {"posted_minor": 4950000, "applied_rate": "495.0000"},
+      "after": {"posted_minor": 4940000, "applied_rate": "494.0000"}
+    }
+  ]
+}

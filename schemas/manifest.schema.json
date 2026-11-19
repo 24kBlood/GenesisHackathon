@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/manifest.schema.json",
+  "title": "Public episode manifest",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "$ref": "common.schema.json#/$defs/version"
+    },
+    "episode_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "base_currency": {
+      "$ref": "common.schema.json#/$defs/currency"
+    },
+    "period_start": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "period_end": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1
+    },
+    "record_counts": {
+      "type": "object",
+      "properties": {
+        "ledger": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "invoices": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payments": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fx": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "ledger",
+        "invoices",
+        "payments",
+        "fx"
+      ],
+      "additionalProperties": false
+    },
+    "document_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "currency_exponents": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "common.schema.json#/$defs/currency"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "rounding_mode": {
+      "$ref": "common.schema.json#/$defs/rounding"
+    }
+  },
+  "required": [
+    "schema_version",
+    "episode_id",
+    "base_currency",
+    "period_start",
+    "period_end",
+    "timezone",
+    "record_counts",
+    "document_count",
+    "currency_exponents",
+    "rounding_mode"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,5 @@
+row_id,timestamp,account,debit_minor,credit_minor,currency,entity_id,invoice_id,payment_id
+row-f9d28,2026-11-05T10:00:00+05:00,expense,4950000,0,KZT,entity-0f1c,inv-50dc,null
+row-745c2,2026-11-05T10:00:00+05:00,accounts_payable,0,4950000,KZT,entity-0f1c,inv-50dc,null
+row-cca24,2026-11-11T10:30:00+05:00,accounts_payable,4940000,0,KZT,entity-0f1c,inv-50dc,pay-165c
+row-b862c,2026-11-11T10:30:00+05:00,bank,0,4940000,KZT,entity-0f1c,inv-50dc,pay-165c

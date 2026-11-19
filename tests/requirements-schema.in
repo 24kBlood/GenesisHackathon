@@ -1,0 +1,4 @@
+# Tooling for SCHEMA-02. Application runtime has no Python package dependencies.
+jsonschema==4.25.1
+rfc3339-validator==0.1.4
+tzdata==2025.2

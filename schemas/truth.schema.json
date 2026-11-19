@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.genesis.invalid/v1/truth.schema.json",
+  "title": "Private evaluator truth",
+  "type": "object",
+  "properties": {
+    "episode_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "type": {
+            "$ref": "common.schema.json#/$defs/error_type"
+          },
+          "affected_ids": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "expected_amount_minor": {
+            "$ref": "common.schema.json#/$defs/minor"
+          },
+          "currency": {
+            "$ref": "common.schema.json#/$defs/currency"
+          },
+          "acceptable_evidence_sets": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "common.schema.json#/$defs/id"
+              },
+              "minItems": 1,
+              "maxItems": 10,
+              "uniqueItems": true
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "issue_id",
+          "type",
+          "affected_ids",
+          "expected_amount_minor",
+          "currency",
+          "acceptable_evidence_sets"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "episode_id",
+    "issues"
+  ],
+  "additionalProperties": false
+}
