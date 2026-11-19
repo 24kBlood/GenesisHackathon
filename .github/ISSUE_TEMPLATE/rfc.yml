@@ -1,0 +1,29 @@
+name: Архитектурное предложение
+description: Согласовать решение до изменений реализации
+title: "[RFC] "
+labels: [rfc, needs-design]
+body:
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Проблема и подтверждение из ТЗ, тестов или PR
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Варианты, рекомендуемое решение и аргументы
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Влияние на рубрику, риски и срок сдачи
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Проверки и план отката
+    validations:
+      required: true

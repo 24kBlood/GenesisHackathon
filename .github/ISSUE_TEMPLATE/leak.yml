@@ -1,0 +1,20 @@
+name: Изоляция и утечки
+description: Зафиксировать наблюдение на синтетическом открытом примере
+title: "[ISOLATION] "
+labels: [security, no-leak]
+body:
+  - type: markdown
+    attributes:
+      value: Описывайте наблюдение на открытом синтетическом примере. Закрытые значения и конфигурации передавайте капитану вне публичного issue.
+  - type: textarea
+    id: surface
+    attributes:
+      label: Канал, ожидаемая граница и затронутые файлы
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Проверка на открытых данных и оценка серьёзности
+    validations:
+      required: true

@@ -1,0 +1,21 @@
+name: Ошибка
+description: Сообщить о воспроизводимой ошибке
+title: "[BUG] "
+labels: [bug]
+body:
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Версия, открытый seed, конфигурация и шаги
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Ожидаемый и фактический результат
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Журналы без приватных данных

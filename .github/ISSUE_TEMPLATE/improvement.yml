@@ -1,0 +1,23 @@
+name: Улучшение
+description: Предложить улучшение существующего компонента
+title: "[IMPROVEMENT] "
+labels: [improvement, needs-design]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема, доказательство и пункт ТЗ
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Предлагаемое изменение, варианты и компромиссы
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Влияние на рубрику и срок, риски, проверки и откат
+    validations:
+      required: true
