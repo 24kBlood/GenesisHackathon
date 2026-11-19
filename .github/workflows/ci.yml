@@ -2,7 +2,8 @@ name: Bootstrap CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, "draft/**"]
+    types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
 permissions:
