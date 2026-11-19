@@ -1,0 +1,92 @@
+{
+  "episode_id": "ep-eb6d7a7c7ca4",
+  "issues": [
+    {
+      "acceptable_evidence_sets": [
+        [
+          "DOC-012564",
+          "DOC-012612",
+          "ROW-057383"
+        ],
+        [
+          "DOC-012564",
+          "DOC-012612",
+          "ROW-057176"
+        ],
+        [
+          "INV-01059",
+          "INV-01085",
+          "ROW-057383"
+        ],
+        [
+          "INV-01059",
+          "INV-01085",
+          "ROW-057176"
+        ]
+      ],
+      "affected_ids": [
+        "INV-01059",
+        "INV-01085"
+      ],
+      "currency": "USD",
+      "description": "Duplicate invoice INV-01085 repeats INV-01059 for entity ENT-0197 on service_date 2026-03-10 (553201 USD).",
+      "expected_amount_minor": 553201,
+      "issue_id": "ISS-001",
+      "tolerance_minor": 0,
+      "type": "duplicate_invoice"
+    },
+    {
+      "acceptable_evidence_sets": [
+        [
+          "DOC-012613",
+          "ROW-057386",
+          "2026-03-30:GBP:USD"
+        ],
+        [
+          "INV-01086",
+          "ROW-057386",
+          "2026-03-30:GBP:USD"
+        ]
+      ],
+      "affected_ids": [
+        "INV-01086"
+      ],
+      "currency": "USD",
+      "description": "Invoice INV-01086 (453472 GBP) posted as 448547 USD instead of expected 518911 USD using FX 2026-03-30:GBP:USD (1.144307).",
+      "expected_amount_minor": 70364,
+      "issue_id": "ISS-002",
+      "tolerance_minor": 1,
+      "type": "fx_conversion_error"
+    },
+    {
+      "acceptable_evidence_sets": [
+        [
+          "DOC-012614",
+          "DOC-012613",
+          "ROW-057389"
+        ],
+        [
+          "DOC-012614",
+          "DOC-012613",
+          "ROW-057390"
+        ],
+        [
+          "PAY-07030",
+          "INV-01086",
+          "ROW-057389"
+        ]
+      ],
+      "affected_ids": [
+        "INV-01086",
+        "PAY-07030"
+      ],
+      "currency": "GBP",
+      "description": "Cross-boundary payment PAY-07030 (453472 GBP) allocates only 271491 to foreign-currency invoice INV-01086 (unallocated diff 181981).",
+      "expected_amount_minor": 181981,
+      "issue_id": "ISS-003",
+      "tolerance_minor": 0,
+      "type": "payment_allocation_mismatch"
+    }
+  ],
+  "schema_version": "1.0.0"
+}

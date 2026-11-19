@@ -1,0 +1,83 @@
+{
+  "config": {
+    "base_currency": "USD",
+    "clean": false,
+    "currencies": [
+      "USD",
+      "EUR",
+      "GBP",
+      "KZT"
+    ],
+    "error_counts": {
+      "duplicate_invoice": 0,
+      "fx_conversion_error": 2,
+      "payment_allocation_mismatch": 0,
+      "period_cutoff_error": 0
+    },
+    "fx_date_policy": "posting_date",
+    "include_distractors": true,
+    "interacting_scenarios": [],
+    "num_invoices": 34,
+    "period_end": "2026-03-31T23:59:59+05:00",
+    "period_start": "2026-01-01T00:00:00+05:00",
+    "rounding_rule": "ROUND_HALF_EVEN",
+    "timezone_offset": "+05:00"
+  },
+  "distractors": {
+    "boundary_timestamps": [
+      "INV-01061"
+    ],
+    "multicurrency_invoices": [
+      "INV-01062",
+      "INV-01063",
+      "INV-01064"
+    ],
+    "recurring_invoices": [
+      "INV-01056",
+      "INV-01057",
+      "INV-01058"
+    ],
+    "refunds": [
+      "PAY-05320"
+    ],
+    "split_payments": [
+      "PAY-05316",
+      "PAY-05317",
+      "PAY-05318"
+    ]
+  },
+  "episode_id": "ep-a5f776ec35ed",
+  "injected_events": [
+    {
+      "expected_base_minor": 310264,
+      "expected_rate": "1.024757",
+      "invoice_id": "INV-01086",
+      "issue_id": "ISS-001",
+      "kind": "fx_conversion_error",
+      "posted_base_minor": 336233,
+      "wrong_rate": "1.110529"
+    },
+    {
+      "expected_base_minor": 268079,
+      "expected_rate": "1.051198",
+      "invoice_id": "INV-01077",
+      "issue_id": "ISS-002",
+      "kind": "fx_conversion_error",
+      "posted_base_minor": 295878,
+      "wrong_rate": "1.160207"
+    }
+  ],
+  "interacting_groups": [],
+  "pre_injection_checks": {
+    "all_clean_invoices_in_period": true,
+    "all_clean_payments_reconcile": true,
+    "clean_invoice_count": 34,
+    "clean_ledger_row_count": 260,
+    "clean_payment_count": 32,
+    "debits_equal_credits": true,
+    "total_credit_minor": 27634496,
+    "total_debit_minor": 27634496
+  },
+  "schema_version": "1.0.0",
+  "seed": 2005
+}

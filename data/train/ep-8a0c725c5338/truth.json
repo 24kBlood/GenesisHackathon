@@ -1,0 +1,74 @@
+{
+  "episode_id": "ep-8a0c725c5338",
+  "issues": [
+    {
+      "acceptable_evidence_sets": [
+        [
+          "DOC-017293",
+          "DOC-017320",
+          "ROW-055437"
+        ],
+        [
+          "DOC-017293",
+          "DOC-017320",
+          "ROW-055274"
+        ],
+        [
+          "INV-03308",
+          "INV-03323",
+          "ROW-055437"
+        ],
+        [
+          "INV-03308",
+          "INV-03323",
+          "ROW-055274"
+        ]
+      ],
+      "affected_ids": [
+        "INV-03308",
+        "INV-03323"
+      ],
+      "currency": "USD",
+      "description": "Duplicate invoice INV-03323 repeats INV-03308 for entity ENT-0367 on service_date 2026-03-16 (205104 USD).",
+      "expected_amount_minor": 205104,
+      "issue_id": "ISS-001",
+      "tolerance_minor": 0,
+      "type": "duplicate_invoice"
+    },
+    {
+      "acceptable_evidence_sets": [
+        [
+          "DOC-017308",
+          "DOC-017321",
+          "ROW-055441"
+        ],
+        [
+          "DOC-017308",
+          "DOC-017321",
+          "ROW-055315"
+        ],
+        [
+          "INV-03316",
+          "INV-03324",
+          "ROW-055441"
+        ],
+        [
+          "INV-03316",
+          "INV-03324",
+          "ROW-055315"
+        ]
+      ],
+      "affected_ids": [
+        "INV-03316",
+        "INV-03324"
+      ],
+      "currency": "USD",
+      "description": "Duplicate invoice INV-03324 repeats INV-03316 for entity ENT-0364 on service_date 2026-01-20 (342300 USD).",
+      "expected_amount_minor": 342300,
+      "issue_id": "ISS-002",
+      "tolerance_minor": 0,
+      "type": "duplicate_invoice"
+    }
+  ],
+  "schema_version": "1.0.0"
+}

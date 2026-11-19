@@ -1,0 +1,404 @@
+{
+  "config_version": "1.0.0",
+  "split": "eval",
+  "episodes": [
+    {
+      "seed": 9001,
+      "description": "Eval clean #1 (USD, +05:00)",
+      "config": {
+        "num_invoices": 32,
+        "base_currency": "USD",
+        "currencies": ["USD", "EUR", "GBP", "KZT", "JPY"],
+        "timezone_offset": "+05:00",
+        "period_start": "2026-01-01T00:00:00+05:00",
+        "period_end": "2026-03-31T23:59:59+05:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {},
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": true
+      }
+    },
+    {
+      "seed": 9002,
+      "description": "Eval clean #2 (EUR, +01:00)",
+      "config": {
+        "num_invoices": 34,
+        "base_currency": "EUR",
+        "currencies": ["EUR", "USD", "GBP", "CHF"],
+        "timezone_offset": "+01:00",
+        "period_start": "2026-04-01T00:00:00+01:00",
+        "period_end": "2026-06-30T23:59:59+01:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_UP",
+        "error_counts": {},
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": true
+      }
+    },
+    {
+      "seed": 9003,
+      "description": "Eval clean #3 (GBP, +00:00)",
+      "config": {
+        "num_invoices": 30,
+        "base_currency": "GBP",
+        "currencies": ["GBP", "USD", "EUR", "JPY"],
+        "timezone_offset": "+00:00",
+        "period_start": "2026-07-01T00:00:00+00:00",
+        "period_end": "2026-09-30T23:59:59+00:00",
+        "fx_date_policy": "posting_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {},
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": true
+      }
+    },
+    {
+      "seed": 9004,
+      "description": "Eval clean #4 (KZT, +05:00)",
+      "config": {
+        "num_invoices": 35,
+        "base_currency": "KZT",
+        "currencies": ["KZT", "USD", "EUR"],
+        "timezone_offset": "+05:00",
+        "period_start": "2026-01-01T00:00:00+05:00",
+        "period_end": "2026-03-31T23:59:59+05:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {},
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": true
+      }
+    },
+    {
+      "seed": 9005,
+      "description": "Eval clean #5 (CHF, -05:00)",
+      "config": {
+        "num_invoices": 33,
+        "base_currency": "CHF",
+        "currencies": ["CHF", "USD", "EUR", "GBP"],
+        "timezone_offset": "-05:00",
+        "period_start": "2026-10-01T00:00:00-05:00",
+        "period_end": "2026-12-31T23:59:59-05:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {},
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": true
+      }
+    },
+    {
+      "seed": 9006,
+      "description": "Eval interacting #1: fx_period_partial_payment (USD, +05:00)",
+      "config": {
+        "num_invoices": 36,
+        "base_currency": "USD",
+        "currencies": ["USD", "EUR", "GBP", "KZT"],
+        "timezone_offset": "+05:00",
+        "period_start": "2026-01-01T00:00:00+05:00",
+        "period_end": "2026-03-31T23:59:59+05:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {},
+        "interacting_scenarios": ["fx_period_partial_payment"],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9007,
+      "description": "Eval interacting #2: duplicate_invoice_fx_mismatch (EUR, +01:00)",
+      "config": {
+        "num_invoices": 36,
+        "base_currency": "EUR",
+        "currencies": ["EUR", "USD", "GBP", "JPY"],
+        "timezone_offset": "+01:00",
+        "period_start": "2026-01-01T00:00:00+01:00",
+        "period_end": "2026-03-31T23:59:59+01:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {},
+        "interacting_scenarios": ["duplicate_invoice_fx_mismatch"],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9008,
+      "description": "Eval interacting #3: fx_period_partial_payment + period_cutoff_error (GBP, +00:00)",
+      "config": {
+        "num_invoices": 38,
+        "base_currency": "GBP",
+        "currencies": ["GBP", "USD", "EUR", "CHF"],
+        "timezone_offset": "+00:00",
+        "period_start": "2026-04-01T00:00:00+00:00",
+        "period_end": "2026-06-30T23:59:59+00:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_UP",
+        "error_counts": {
+          "period_cutoff_error": 1
+        },
+        "interacting_scenarios": ["fx_period_partial_payment"],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9009,
+      "description": "Eval interacting #4: duplicate_invoice_fx_mismatch + payment_allocation_mismatch (USD, -05:00)",
+      "config": {
+        "num_invoices": 38,
+        "base_currency": "USD",
+        "currencies": ["USD", "EUR", "GBP", "KZT"],
+        "timezone_offset": "-05:00",
+        "period_start": "2026-01-01T00:00:00-05:00",
+        "period_end": "2026-03-31T23:59:59-05:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {
+          "payment_allocation_mismatch": 1
+        },
+        "interacting_scenarios": ["duplicate_invoice_fx_mismatch"],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9010,
+      "description": "Eval interacting #5: both interacting scenarios (USD, +09:00)",
+      "config": {
+        "num_invoices": 40,
+        "base_currency": "USD",
+        "currencies": ["USD", "EUR", "GBP", "JPY"],
+        "timezone_offset": "+09:00",
+        "period_start": "2026-01-01T00:00:00+09:00",
+        "period_end": "2026-03-31T23:59:59+09:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {},
+        "interacting_scenarios": [
+          "fx_period_partial_payment",
+          "duplicate_invoice_fx_mismatch"
+        ],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9011,
+      "description": "Eval single #1: duplicate_invoice (2, USD)",
+      "config": {
+        "num_invoices": 34,
+        "base_currency": "USD",
+        "currencies": ["USD", "EUR", "GBP"],
+        "timezone_offset": "+05:00",
+        "period_start": "2026-01-01T00:00:00+05:00",
+        "period_end": "2026-03-31T23:59:59+05:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {
+          "duplicate_invoice": 2
+        },
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9012,
+      "description": "Eval single #2: payment_allocation_mismatch (2, EUR)",
+      "config": {
+        "num_invoices": 35,
+        "base_currency": "EUR",
+        "currencies": ["EUR", "USD", "GBP"],
+        "timezone_offset": "+01:00",
+        "period_start": "2026-01-01T00:00:00+01:00",
+        "period_end": "2026-03-31T23:59:59+01:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {
+          "payment_allocation_mismatch": 2
+        },
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9013,
+      "description": "Eval single #3: fx_conversion_error (2, USD, posting_date)",
+      "config": {
+        "num_invoices": 35,
+        "base_currency": "USD",
+        "currencies": ["USD", "EUR", "GBP", "KZT"],
+        "timezone_offset": "+05:00",
+        "period_start": "2026-01-01T00:00:00+05:00",
+        "period_end": "2026-03-31T23:59:59+05:00",
+        "fx_date_policy": "posting_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {
+          "fx_conversion_error": 2
+        },
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9014,
+      "description": "Eval single #4: period_cutoff_error (2, CHF, +01:00)",
+      "config": {
+        "num_invoices": 34,
+        "base_currency": "CHF",
+        "currencies": ["CHF", "EUR", "USD"],
+        "timezone_offset": "+01:00",
+        "period_start": "2026-01-01T00:00:00+01:00",
+        "period_end": "2026-03-31T23:59:59+01:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {
+          "period_cutoff_error": 2
+        },
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9015,
+      "description": "Eval multi #1: duplicate + payment (KZT, +05:00)",
+      "config": {
+        "num_invoices": 36,
+        "base_currency": "KZT",
+        "currencies": ["KZT", "USD", "EUR"],
+        "timezone_offset": "+05:00",
+        "period_start": "2026-01-01T00:00:00+05:00",
+        "period_end": "2026-03-31T23:59:59+05:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {
+          "duplicate_invoice": 1,
+          "payment_allocation_mismatch": 1
+        },
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9016,
+      "description": "Eval multi #2: fx + cutoff (GBP, +00:00)",
+      "config": {
+        "num_invoices": 36,
+        "base_currency": "GBP",
+        "currencies": ["GBP", "USD", "EUR", "JPY"],
+        "timezone_offset": "+00:00",
+        "period_start": "2026-04-01T00:00:00+00:00",
+        "period_end": "2026-06-30T23:59:59+00:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_UP",
+        "error_counts": {
+          "fx_conversion_error": 1,
+          "period_cutoff_error": 1
+        },
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9017,
+      "description": "Eval multi #3: duplicate + fx + cutoff (USD, -05:00)",
+      "config": {
+        "num_invoices": 38,
+        "base_currency": "USD",
+        "currencies": ["USD", "EUR", "GBP", "CHF"],
+        "timezone_offset": "-05:00",
+        "period_start": "2026-01-01T00:00:00-05:00",
+        "period_end": "2026-03-31T23:59:59-05:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {
+          "duplicate_invoice": 1,
+          "fx_conversion_error": 1,
+          "period_cutoff_error": 1
+        },
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9018,
+      "description": "Eval multi #4: payment(2) + fx(1) (USD, +09:00)",
+      "config": {
+        "num_invoices": 38,
+        "base_currency": "USD",
+        "currencies": ["USD", "JPY", "EUR", "GBP"],
+        "timezone_offset": "+09:00",
+        "period_start": "2026-01-01T00:00:00+09:00",
+        "period_end": "2026-03-31T23:59:59+09:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {
+          "payment_allocation_mismatch": 2,
+          "fx_conversion_error": 1
+        },
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9019,
+      "description": "Eval multi #5: all 4 error types (USD, -08:00)",
+      "config": {
+        "num_invoices": 40,
+        "base_currency": "USD",
+        "currencies": ["USD", "EUR", "GBP", "KZT"],
+        "timezone_offset": "-08:00",
+        "period_start": "2026-01-01T00:00:00-08:00",
+        "period_end": "2026-03-31T23:59:59-08:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_EVEN",
+        "error_counts": {
+          "duplicate_invoice": 1,
+          "payment_allocation_mismatch": 1,
+          "fx_conversion_error": 1,
+          "period_cutoff_error": 1
+        },
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": false
+      }
+    },
+    {
+      "seed": 9020,
+      "description": "Eval multi #6: all 4 error types (EUR, +05:00, ROUND_HALF_UP)",
+      "config": {
+        "num_invoices": 40,
+        "base_currency": "EUR",
+        "currencies": ["EUR", "USD", "GBP", "CHF", "JPY"],
+        "timezone_offset": "+05:00",
+        "period_start": "2026-01-01T00:00:00+05:00",
+        "period_end": "2026-03-31T23:59:59+05:00",
+        "fx_date_policy": "invoice_issue_date",
+        "rounding_rule": "ROUND_HALF_UP",
+        "error_counts": {
+          "duplicate_invoice": 1,
+          "payment_allocation_mismatch": 1,
+          "fx_conversion_error": 1,
+          "period_cutoff_error": 1
+        },
+        "interacting_scenarios": [],
+        "include_distractors": true,
+        "clean": false
+      }
+    }
+  ]
+}

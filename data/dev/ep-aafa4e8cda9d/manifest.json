@@ -1,0 +1,20 @@
+{
+  "base_currency": "USD",
+  "company_name": "Kestrel Logistics LLP",
+  "currencies": [
+    "USD",
+    "EUR",
+    "GBP"
+  ],
+  "episode_id": "ep-aafa4e8cda9d",
+  "period_end": "2026-03-31T23:59:59+05:00",
+  "period_start": "2026-01-01T00:00:00+05:00",
+  "record_counts": {
+    "fx_rates": 240,
+    "invoices": 36,
+    "ledger": 266,
+    "payments": 30
+  },
+  "schema_version": "1.0.0",
+  "timezone_offset": "+05:00"
+}

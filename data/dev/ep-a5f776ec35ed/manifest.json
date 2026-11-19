@@ -1,0 +1,21 @@
+{
+  "base_currency": "USD",
+  "company_name": "Cobalt Cloud Systems Inc.",
+  "currencies": [
+    "USD",
+    "EUR",
+    "GBP",
+    "KZT"
+  ],
+  "episode_id": "ep-a5f776ec35ed",
+  "period_end": "2026-03-31T23:59:59+05:00",
+  "period_start": "2026-01-01T00:00:00+05:00",
+  "record_counts": {
+    "fx_rates": 360,
+    "invoices": 34,
+    "ledger": 260,
+    "payments": 32
+  },
+  "schema_version": "1.0.0",
+  "timezone_offset": "+05:00"
+}

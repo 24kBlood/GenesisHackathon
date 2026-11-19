@@ -1,0 +1,60 @@
+{
+  "episode_id": "ep-3014a3327f4a",
+  "issues": [
+    {
+      "acceptable_evidence_sets": [
+        [
+          "DOC-027748",
+          "ROW-056935"
+        ],
+        [
+          "DOC-027748",
+          "ROW-056936"
+        ],
+        [
+          "PAY-07973",
+          "ROW-056935"
+        ]
+      ],
+      "affected_ids": [
+        "PAY-07973"
+      ],
+      "currency": "USD",
+      "description": "Payment PAY-07973 (133900 USD) has null invoice_refs and remains unallocated.",
+      "expected_amount_minor": 133900,
+      "issue_id": "ISS-001",
+      "tolerance_minor": 0,
+      "type": "payment_allocation_mismatch"
+    },
+    {
+      "acceptable_evidence_sets": [
+        [
+          "DOC-027749",
+          "DOC-027724",
+          "ROW-056937"
+        ],
+        [
+          "DOC-027749",
+          "DOC-027724",
+          "ROW-056938"
+        ],
+        [
+          "PAY-07974",
+          "INV-01456",
+          "ROW-056937"
+        ]
+      ],
+      "affected_ids": [
+        "INV-01456",
+        "PAY-07974"
+      ],
+      "currency": "EUR",
+      "description": "Payment PAY-07974 (182673 EUR) allocates only 105457 to invoice INV-01456, leaving 77216 unallocated.",
+      "expected_amount_minor": 77216,
+      "issue_id": "ISS-002",
+      "tolerance_minor": 0,
+      "type": "payment_allocation_mismatch"
+    }
+  ],
+  "schema_version": "1.0.0"
+}

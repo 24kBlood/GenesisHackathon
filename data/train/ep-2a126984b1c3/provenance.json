@@ -1,0 +1,93 @@
+{
+  "config": {
+    "base_currency": "USD",
+    "clean": false,
+    "currencies": [
+      "USD",
+      "EUR",
+      "GBP",
+      "JPY"
+    ],
+    "error_counts": {
+      "duplicate_invoice": 0,
+      "fx_conversion_error": 0,
+      "payment_allocation_mismatch": 0,
+      "period_cutoff_error": 1
+    },
+    "fx_date_policy": "invoice_issue_date",
+    "include_distractors": true,
+    "interacting_scenarios": [
+      "duplicate_invoice_fx_mismatch"
+    ],
+    "num_invoices": 36,
+    "period_end": "2026-03-31T23:59:59+05:00",
+    "period_start": "2026-01-01T00:00:00+05:00",
+    "rounding_rule": "ROUND_HALF_EVEN",
+    "timezone_offset": "+05:00"
+  },
+  "distractors": {
+    "boundary_timestamps": [
+      "INV-03194"
+    ],
+    "multicurrency_invoices": [
+      "INV-03195",
+      "INV-03196",
+      "INV-03197"
+    ],
+    "recurring_invoices": [
+      "INV-03189",
+      "INV-03190",
+      "INV-03191"
+    ],
+    "refunds": [
+      "PAY-05348"
+    ],
+    "split_payments": [
+      "PAY-05344",
+      "PAY-05345",
+      "PAY-05346"
+    ]
+  },
+  "episode_id": "ep-2a126984b1c3",
+  "injected_events": [
+    {
+      "invoice_id": "INV-03225",
+      "issue_id": "ISS-001",
+      "kind": "period_cutoff_error",
+      "posted_at": "2026-03-31T21:02:47+05:00",
+      "service_date": "2026-04-06"
+    },
+    {
+      "expected_base_minor": 535183,
+      "expected_rate": "1.048902",
+      "invoice_id": "INV-03226",
+      "issue_id": "ISS-003",
+      "kind": "fx_conversion_error",
+      "posted_base_minor": 603634,
+      "wrong_rate": "1.183057"
+    }
+  ],
+  "interacting_groups": [
+    {
+      "dup_invoice_id": "INV-03226",
+      "issue_ids": [
+        "ISS-002",
+        "ISS-003"
+      ],
+      "orig_invoice_id": "INV-03201",
+      "scenario": "duplicate_invoice_fx_mismatch"
+    }
+  ],
+  "pre_injection_checks": {
+    "all_clean_invoices_in_period": true,
+    "all_clean_payments_reconcile": true,
+    "clean_invoice_count": 36,
+    "clean_ledger_row_count": 259,
+    "clean_payment_count": 28,
+    "debits_equal_credits": true,
+    "total_credit_minor": 26985069,
+    "total_debit_minor": 26985069
+  },
+  "schema_version": "1.0.0",
+  "seed": 1010
+}

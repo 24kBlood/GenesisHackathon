@@ -1,0 +1,94 @@
+{
+  "config": {
+    "base_currency": "EUR",
+    "clean": false,
+    "currencies": [
+      "EUR",
+      "USD",
+      "GBP",
+      "CHF",
+      "JPY"
+    ],
+    "error_counts": {
+      "duplicate_invoice": 1,
+      "fx_conversion_error": 1,
+      "payment_allocation_mismatch": 1,
+      "period_cutoff_error": 1
+    },
+    "fx_date_policy": "invoice_issue_date",
+    "include_distractors": true,
+    "interacting_scenarios": [],
+    "num_invoices": 40,
+    "period_end": "2026-03-31T23:59:59+01:00",
+    "period_start": "2026-01-01T00:00:00+01:00",
+    "rounding_rule": "ROUND_HALF_UP",
+    "timezone_offset": "+01:00"
+  },
+  "distractors": {
+    "boundary_timestamps": [
+      "INV-02829"
+    ],
+    "multicurrency_invoices": [
+      "INV-02830",
+      "INV-02831",
+      "INV-02832"
+    ],
+    "recurring_invoices": [
+      "INV-02824",
+      "INV-02825",
+      "INV-02826"
+    ],
+    "refunds": [
+      "PAY-06401"
+    ],
+    "split_payments": [
+      "PAY-06397",
+      "PAY-06398",
+      "PAY-06399"
+    ]
+  },
+  "episode_id": "ep-f34d0ce23540",
+  "injected_events": [
+    {
+      "dup_invoice_id": "INV-02864",
+      "issue_id": "ISS-001",
+      "kind": "duplicate_invoice",
+      "orig_invoice_id": "INV-02844"
+    },
+    {
+      "issue_id": "ISS-002",
+      "kind": "payment_allocation_mismatch",
+      "payment_id": "PAY-06429",
+      "variant": "unallocated"
+    },
+    {
+      "expected_base_minor": 102843,
+      "expected_rate": "1.068028",
+      "invoice_id": "INV-02851",
+      "issue_id": "ISS-003",
+      "kind": "fx_conversion_error",
+      "posted_base_minor": 111317,
+      "wrong_rate": "1.156034"
+    },
+    {
+      "invoice_id": "INV-02865",
+      "issue_id": "ISS-004",
+      "kind": "period_cutoff_error",
+      "posted_at": "2026-03-31T15:01:17+01:00",
+      "service_date": "2026-04-06"
+    }
+  ],
+  "interacting_groups": [],
+  "pre_injection_checks": {
+    "all_clean_invoices_in_period": true,
+    "all_clean_payments_reconcile": true,
+    "clean_invoice_count": 40,
+    "clean_ledger_row_count": 260,
+    "clean_payment_count": 35,
+    "debits_equal_credits": true,
+    "total_credit_minor": 27811840,
+    "total_debit_minor": 27811840
+  },
+  "schema_version": "1.0.0",
+  "seed": 1008
+}

@@ -1,0 +1,21 @@
+{
+  "base_currency": "USD",
+  "company_name": "Cobalt Analytics Holdings",
+  "currencies": [
+    "USD",
+    "EUR",
+    "GBP",
+    "JPY"
+  ],
+  "episode_id": "ep-2a126984b1c3",
+  "period_end": "2026-03-31T23:59:59+05:00",
+  "period_start": "2026-01-01T00:00:00+05:00",
+  "record_counts": {
+    "fx_rates": 360,
+    "invoices": 38,
+    "ledger": 265,
+    "payments": 28
+  },
+  "schema_version": "1.0.0",
+  "timezone_offset": "+05:00"
+}

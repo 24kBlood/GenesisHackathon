@@ -1,0 +1,76 @@
+{
+  "config": {
+    "base_currency": "USD",
+    "clean": false,
+    "currencies": [
+      "USD",
+      "EUR",
+      "KZT"
+    ],
+    "error_counts": {
+      "duplicate_invoice": 0,
+      "fx_conversion_error": 0,
+      "payment_allocation_mismatch": 2,
+      "period_cutoff_error": 0
+    },
+    "fx_date_policy": "invoice_issue_date",
+    "include_distractors": true,
+    "interacting_scenarios": [],
+    "num_invoices": 35,
+    "period_end": "2026-03-31T23:59:59+05:00",
+    "period_start": "2026-01-01T00:00:00+05:00",
+    "rounding_rule": "ROUND_HALF_EVEN",
+    "timezone_offset": "+05:00"
+  },
+  "distractors": {
+    "boundary_timestamps": [
+      "INV-01441"
+    ],
+    "multicurrency_invoices": [
+      "INV-01442",
+      "INV-01443"
+    ],
+    "recurring_invoices": [
+      "INV-01436",
+      "INV-01437",
+      "INV-01438"
+    ],
+    "refunds": [
+      "PAY-07952"
+    ],
+    "split_payments": [
+      "PAY-07948",
+      "PAY-07949",
+      "PAY-07950"
+    ]
+  },
+  "episode_id": "ep-3014a3327f4a",
+  "injected_events": [
+    {
+      "issue_id": "ISS-001",
+      "kind": "payment_allocation_mismatch",
+      "payment_id": "PAY-07973",
+      "variant": "unallocated"
+    },
+    {
+      "invoice_id": "INV-01456",
+      "issue_id": "ISS-002",
+      "kind": "payment_allocation_mismatch",
+      "payment_id": "PAY-07974",
+      "variant": "partial_allocation"
+    }
+  ],
+  "interacting_groups": [],
+  "pre_injection_checks": {
+    "all_clean_invoices_in_period": true,
+    "all_clean_payments_reconcile": true,
+    "clean_invoice_count": 35,
+    "clean_ledger_row_count": 260,
+    "clean_payment_count": 28,
+    "debits_equal_credits": true,
+    "total_credit_minor": 27309312,
+    "total_debit_minor": 27309312
+  },
+  "schema_version": "1.0.0",
+  "seed": 1004
+}

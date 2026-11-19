@@ -1,0 +1,65 @@
+{
+  "config": {
+    "base_currency": "USD",
+    "clean": true,
+    "currencies": [
+      "USD",
+      "EUR",
+      "GBP",
+      "KZT",
+      "JPY"
+    ],
+    "error_counts": {
+      "duplicate_invoice": 0,
+      "fx_conversion_error": 0,
+      "payment_allocation_mismatch": 0,
+      "period_cutoff_error": 0
+    },
+    "fx_date_policy": "invoice_issue_date",
+    "include_distractors": true,
+    "interacting_scenarios": [],
+    "num_invoices": 30,
+    "period_end": "2026-03-31T23:59:59+00:00",
+    "period_start": "2026-01-01T00:00:00+00:00",
+    "rounding_rule": "ROUND_HALF_EVEN",
+    "timezone_offset": "+00:00"
+  },
+  "distractors": {
+    "boundary_timestamps": [
+      "INV-02490"
+    ],
+    "multicurrency_invoices": [
+      "INV-02491",
+      "INV-02492",
+      "INV-02493"
+    ],
+    "recurring_invoices": [
+      "INV-02485",
+      "INV-02486",
+      "INV-02487"
+    ],
+    "refunds": [
+      "PAY-05223"
+    ],
+    "split_payments": [
+      "PAY-05219",
+      "PAY-05220",
+      "PAY-05221"
+    ]
+  },
+  "episode_id": "ep-cd61f350f315",
+  "injected_events": [],
+  "interacting_groups": [],
+  "pre_injection_checks": {
+    "all_clean_invoices_in_period": true,
+    "all_clean_payments_reconcile": true,
+    "clean_invoice_count": 30,
+    "clean_ledger_row_count": 260,
+    "clean_payment_count": 28,
+    "debits_equal_credits": true,
+    "total_credit_minor": 26066537,
+    "total_debit_minor": 26066537
+  },
+  "schema_version": "1.0.0",
+  "seed": 2001
+}

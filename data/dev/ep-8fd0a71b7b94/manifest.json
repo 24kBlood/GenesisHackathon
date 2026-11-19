@@ -1,0 +1,20 @@
+{
+  "base_currency": "USD",
+  "company_name": "Vertex Cloud Systems Inc.",
+  "currencies": [
+    "USD",
+    "JPY",
+    "EUR"
+  ],
+  "episode_id": "ep-8fd0a71b7b94",
+  "period_end": "2026-03-31T23:59:59+09:00",
+  "period_start": "2026-01-01T00:00:00+09:00",
+  "record_counts": {
+    "fx_rates": 240,
+    "invoices": 35,
+    "ledger": 266,
+    "payments": 27
+  },
+  "schema_version": "1.0.0",
+  "timezone_offset": "+09:00"
+}

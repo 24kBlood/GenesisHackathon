@@ -1,0 +1,52 @@
+{
+  "episode_id": "ep-a5f776ec35ed",
+  "issues": [
+    {
+      "acceptable_evidence_sets": [
+        [
+          "DOC-026007",
+          "ROW-047025",
+          "2026-02-25:EUR:USD"
+        ],
+        [
+          "INV-01086",
+          "ROW-047025",
+          "2026-02-25:EUR:USD"
+        ]
+      ],
+      "affected_ids": [
+        "INV-01086"
+      ],
+      "currency": "USD",
+      "description": "Invoice INV-01086 (302768 EUR) posted as 336233 USD instead of expected 310264 USD using FX 2026-02-25:EUR:USD (1.024757).",
+      "expected_amount_minor": 25969,
+      "issue_id": "ISS-001",
+      "tolerance_minor": 1,
+      "type": "fx_conversion_error"
+    },
+    {
+      "acceptable_evidence_sets": [
+        [
+          "DOC-025991",
+          "ROW-046979",
+          "2026-01-16:EUR:USD"
+        ],
+        [
+          "INV-01077",
+          "ROW-046979",
+          "2026-01-16:EUR:USD"
+        ]
+      ],
+      "affected_ids": [
+        "INV-01077"
+      ],
+      "currency": "USD",
+      "description": "Invoice INV-01077 (255022 EUR) posted as 295878 USD instead of expected 268079 USD using FX 2026-01-16:EUR:USD (1.051198).",
+      "expected_amount_minor": 27799,
+      "issue_id": "ISS-002",
+      "tolerance_minor": 1,
+      "type": "fx_conversion_error"
+    }
+  ],
+  "schema_version": "1.0.0"
+}

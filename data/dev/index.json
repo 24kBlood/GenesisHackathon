@@ -1,0 +1,86 @@
+{
+  "config_version": "1.0.0",
+  "split": "dev",
+  "episodes": [
+    {
+      "index": 1,
+      "episode_id": "ep-cd61f350f315",
+      "seed": 2001,
+      "description": "Clean books (USD, +00:00)",
+      "num_issues": 0,
+      "path": "data/dev/ep-cd61f350f315"
+    },
+    {
+      "index": 2,
+      "episode_id": "ep-4046e168ef40",
+      "seed": 2002,
+      "description": "Clean books (GBP, +00:00)",
+      "num_issues": 0,
+      "path": "data/dev/ep-4046e168ef40"
+    },
+    {
+      "index": 3,
+      "episode_id": "ep-aafa4e8cda9d",
+      "seed": 2003,
+      "description": "Single error type: duplicate_invoice (2)",
+      "num_issues": 2,
+      "path": "data/dev/ep-aafa4e8cda9d"
+    },
+    {
+      "index": 4,
+      "episode_id": "ep-aaee1abaee7b",
+      "seed": 2004,
+      "description": "Single error type: payment_allocation_mismatch (2)",
+      "num_issues": 2,
+      "path": "data/dev/ep-aaee1abaee7b"
+    },
+    {
+      "index": 5,
+      "episode_id": "ep-a5f776ec35ed",
+      "seed": 2005,
+      "description": "Single error type: fx_conversion_error (2, posting_date)",
+      "num_issues": 2,
+      "path": "data/dev/ep-a5f776ec35ed"
+    },
+    {
+      "index": 6,
+      "episode_id": "ep-8fd0a71b7b94",
+      "seed": 2006,
+      "description": "Single error type: period_cutoff_error (2, +09:00)",
+      "num_issues": 2,
+      "path": "data/dev/ep-8fd0a71b7b94"
+    },
+    {
+      "index": 7,
+      "episode_id": "ep-8c442a7e606e",
+      "seed": 2007,
+      "description": "Multi-error mix: duplicate + fx + cutoff",
+      "num_issues": 3,
+      "path": "data/dev/ep-8c442a7e606e"
+    },
+    {
+      "index": 8,
+      "episode_id": "ep-bf99c3389764",
+      "seed": 2008,
+      "description": "Multi-error all 4 types (GBP)",
+      "num_issues": 4,
+      "path": "data/dev/ep-bf99c3389764"
+    },
+    {
+      "index": 9,
+      "episode_id": "ep-b7950e31cbf0",
+      "seed": 2009,
+      "description": "Interacting scenario: fx_period_partial_payment",
+      "num_issues": 2,
+      "path": "data/dev/ep-b7950e31cbf0"
+    },
+    {
+      "index": 10,
+      "episode_id": "ep-726c7024644b",
+      "seed": 2010,
+      "description": "Interacting scenario: duplicate_invoice_fx_mismatch",
+      "num_issues": 2,
+      "path": "data/dev/ep-726c7024644b"
+    }
+  ]
+}

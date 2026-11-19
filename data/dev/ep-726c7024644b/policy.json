@@ -1,0 +1,19 @@
+{
+  "base_currency": "EUR",
+  "currency_exponents": {
+    "CHF": 2,
+    "EUR": 2,
+    "GBP": 2,
+    "USD": 2
+  },
+  "cutoff_basis": "service_date",
+  "error_types": [
+    "duplicate_invoice",
+    "payment_allocation_mismatch",
+    "fx_conversion_error",
+    "period_cutoff_error"
+  ],
+  "fx_date_policy": "invoice_issue_date",
+  "rounding_rule": "ROUND_HALF_EVEN",
+  "schema_version": "1.0.0"
+}

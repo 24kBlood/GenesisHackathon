@@ -1,0 +1,92 @@
+{
+  "config": {
+    "base_currency": "USD",
+    "clean": false,
+    "currencies": [
+      "USD",
+      "EUR",
+      "GBP",
+      "KZT"
+    ],
+    "error_counts": {
+      "duplicate_invoice": 1,
+      "fx_conversion_error": 0,
+      "payment_allocation_mismatch": 0,
+      "period_cutoff_error": 0
+    },
+    "fx_date_policy": "invoice_issue_date",
+    "include_distractors": true,
+    "interacting_scenarios": [
+      "fx_period_partial_payment"
+    ],
+    "num_invoices": 36,
+    "period_end": "2026-03-31T23:59:59+05:00",
+    "period_start": "2026-01-01T00:00:00+05:00",
+    "rounding_rule": "ROUND_HALF_EVEN",
+    "timezone_offset": "+05:00"
+  },
+  "distractors": {
+    "boundary_timestamps": [
+      "INV-01054"
+    ],
+    "multicurrency_invoices": [
+      "INV-01055",
+      "INV-01056",
+      "INV-01057"
+    ],
+    "recurring_invoices": [
+      "INV-01049",
+      "INV-01050",
+      "INV-01051"
+    ],
+    "refunds": [
+      "PAY-07004"
+    ],
+    "split_payments": [
+      "PAY-07000",
+      "PAY-07001",
+      "PAY-07002"
+    ]
+  },
+  "episode_id": "ep-eb6d7a7c7ca4",
+  "injected_events": [
+    {
+      "dup_invoice_id": "INV-01085",
+      "issue_id": "ISS-001",
+      "kind": "duplicate_invoice",
+      "orig_invoice_id": "INV-01059"
+    },
+    {
+      "expected_base_minor": 518911,
+      "expected_rate": "1.144307",
+      "invoice_id": "INV-01086",
+      "issue_id": "ISS-002",
+      "kind": "fx_conversion_error",
+      "posted_base_minor": 448547,
+      "wrong_rate": "0.989139"
+    }
+  ],
+  "interacting_groups": [
+    {
+      "issue_ids": [
+        "ISS-002",
+        "ISS-003"
+      ],
+      "payment_id": "PAY-07030",
+      "scenario": "fx_period_partial_payment",
+      "shared_invoice_id": "INV-01086"
+    }
+  ],
+  "pre_injection_checks": {
+    "all_clean_invoices_in_period": true,
+    "all_clean_payments_reconcile": true,
+    "clean_invoice_count": 36,
+    "clean_ledger_row_count": 259,
+    "clean_payment_count": 33,
+    "debits_equal_credits": true,
+    "total_credit_minor": 32588266,
+    "total_debit_minor": 32588266
+  },
+  "schema_version": "1.0.0",
+  "seed": 1009
+}

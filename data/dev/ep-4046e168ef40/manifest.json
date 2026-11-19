@@ -1,0 +1,21 @@
+{
+  "base_currency": "GBP",
+  "company_name": "Steppe Analytics Holdings",
+  "currencies": [
+    "GBP",
+    "USD",
+    "EUR",
+    "CHF"
+  ],
+  "episode_id": "ep-4046e168ef40",
+  "period_end": "2026-06-30T23:59:59+00:00",
+  "period_start": "2026-04-01T00:00:00+00:00",
+  "record_counts": {
+    "fx_rates": 363,
+    "invoices": 32,
+    "ledger": 260,
+    "payments": 26
+  },
+  "schema_version": "1.0.0",
+  "timezone_offset": "+00:00"
+}

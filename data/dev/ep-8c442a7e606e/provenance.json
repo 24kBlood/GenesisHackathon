@@ -1,0 +1,87 @@
+{
+  "config": {
+    "base_currency": "USD",
+    "clean": false,
+    "currencies": [
+      "USD",
+      "EUR",
+      "GBP",
+      "JPY"
+    ],
+    "error_counts": {
+      "duplicate_invoice": 1,
+      "fx_conversion_error": 1,
+      "payment_allocation_mismatch": 0,
+      "period_cutoff_error": 1
+    },
+    "fx_date_policy": "invoice_issue_date",
+    "include_distractors": true,
+    "interacting_scenarios": [],
+    "num_invoices": 38,
+    "period_end": "2026-03-31T23:59:59-05:00",
+    "period_start": "2026-01-01T00:00:00-05:00",
+    "rounding_rule": "ROUND_HALF_UP",
+    "timezone_offset": "-05:00"
+  },
+  "distractors": {
+    "boundary_timestamps": [
+      "INV-03715"
+    ],
+    "multicurrency_invoices": [
+      "INV-03716",
+      "INV-03717",
+      "INV-03718"
+    ],
+    "recurring_invoices": [
+      "INV-03710",
+      "INV-03711",
+      "INV-03712"
+    ],
+    "refunds": [
+      "PAY-05295"
+    ],
+    "split_payments": [
+      "PAY-05291",
+      "PAY-05292",
+      "PAY-05293"
+    ]
+  },
+  "episode_id": "ep-8c442a7e606e",
+  "injected_events": [
+    {
+      "dup_invoice_id": "INV-03748",
+      "issue_id": "ISS-001",
+      "kind": "duplicate_invoice",
+      "orig_invoice_id": "INV-03730"
+    },
+    {
+      "expected_base_minor": 558460,
+      "expected_rate": "1.123755",
+      "invoice_id": "INV-03746",
+      "issue_id": "ISS-002",
+      "kind": "fx_conversion_error",
+      "posted_base_minor": 622906,
+      "wrong_rate": "1.253436"
+    },
+    {
+      "invoice_id": "INV-03749",
+      "issue_id": "ISS-003",
+      "kind": "period_cutoff_error",
+      "posted_at": "2026-03-31T16:32:27-05:00",
+      "service_date": "2026-04-04"
+    }
+  ],
+  "interacting_groups": [],
+  "pre_injection_checks": {
+    "all_clean_invoices_in_period": true,
+    "all_clean_payments_reconcile": true,
+    "clean_invoice_count": 38,
+    "clean_ledger_row_count": 260,
+    "clean_payment_count": 37,
+    "debits_equal_credits": true,
+    "total_credit_minor": 29341806,
+    "total_debit_minor": 29341806
+  },
+  "schema_version": "1.0.0",
+  "seed": 2007
+}

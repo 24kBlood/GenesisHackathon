@@ -1,0 +1,86 @@
+{
+  "config": {
+    "base_currency": "EUR",
+    "clean": false,
+    "currencies": [
+      "EUR",
+      "USD",
+      "GBP",
+      "CHF"
+    ],
+    "error_counts": {
+      "duplicate_invoice": 0,
+      "fx_conversion_error": 0,
+      "payment_allocation_mismatch": 0,
+      "period_cutoff_error": 0
+    },
+    "fx_date_policy": "invoice_issue_date",
+    "include_distractors": true,
+    "interacting_scenarios": [
+      "duplicate_invoice_fx_mismatch"
+    ],
+    "num_invoices": 36,
+    "period_end": "2026-03-31T23:59:59+01:00",
+    "period_start": "2026-01-01T00:00:00+01:00",
+    "rounding_rule": "ROUND_HALF_EVEN",
+    "timezone_offset": "+01:00"
+  },
+  "distractors": {
+    "boundary_timestamps": [
+      "INV-02999"
+    ],
+    "multicurrency_invoices": [
+      "INV-03000",
+      "INV-03001",
+      "INV-03002"
+    ],
+    "recurring_invoices": [
+      "INV-02994",
+      "INV-02995",
+      "INV-02996"
+    ],
+    "refunds": [
+      "PAY-06867"
+    ],
+    "split_payments": [
+      "PAY-06863",
+      "PAY-06864",
+      "PAY-06865"
+    ]
+  },
+  "episode_id": "ep-726c7024644b",
+  "injected_events": [
+    {
+      "expected_base_minor": 639248,
+      "expected_rate": "0.935390",
+      "invoice_id": "INV-03030",
+      "issue_id": "ISS-002",
+      "kind": "fx_conversion_error",
+      "posted_base_minor": 721136,
+      "wrong_rate": "1.055213"
+    }
+  ],
+  "interacting_groups": [
+    {
+      "dup_invoice_id": "INV-03030",
+      "issue_ids": [
+        "ISS-001",
+        "ISS-002"
+      ],
+      "orig_invoice_id": "INV-03006",
+      "scenario": "duplicate_invoice_fx_mismatch"
+    }
+  ],
+  "pre_injection_checks": {
+    "all_clean_invoices_in_period": true,
+    "all_clean_payments_reconcile": true,
+    "clean_invoice_count": 36,
+    "clean_ledger_row_count": 259,
+    "clean_payment_count": 34,
+    "debits_equal_credits": true,
+    "total_credit_minor": 27803162,
+    "total_debit_minor": 27803162
+  },
+  "schema_version": "1.0.0",
+  "seed": 2010
+}
