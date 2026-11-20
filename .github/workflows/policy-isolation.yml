@@ -25,7 +25,5 @@ jobs:
       - run: python -m pip install --no-deps -r tests/requirements-schema.lock
       - run: docker build --tag genesis-policy-smoke:ci tests/fixtures/policy_smoke
       - name: Verify policy image with the runner environment
-        run: |
-          docker image inspect --format '{{.Id}} {{json .Config.Volumes}}' "$GENESIS_POLICY_SMOKE_IMAGE"
-          env -i PATH="$PATH" docker image inspect --format '{{.Id}} {{json .Config.Volumes}}' "$GENESIS_POLICY_SMOKE_IMAGE"
+        run: env -i PATH="$PATH" docker image inspect --format '{{.Id}}' "$GENESIS_POLICY_SMOKE_IMAGE"
       - run: python -m unittest discover -s tests -p test_evaluator_isolation.py -v

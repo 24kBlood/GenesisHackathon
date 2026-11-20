@@ -1,6 +1,7 @@
 """Production runner for a trusted, locally staged policy image."""
 
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -12,8 +13,9 @@ from .jsonl import FRAME_BYTES, JsonlProcess, TransportCode, TransportError, bef
 
 
 _IMAGE_REFERENCE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,255}")
-_IMAGE_ID = re.compile(rb"sha256:[a-f0-9]{64}")
+_IMAGE_ID = re.compile(r"sha256:[a-f0-9]{64}")
 _DAEMON_RESPONSE_BYTES = 512
+_IMAGE_INSPECT_BYTES = 64 * 1024
 _CLEANUP_SECONDS = 5
 
 
@@ -48,7 +50,7 @@ class DockerPolicy:
         self._image = image
         self._executable = executable
 
-    async def _command(self, *args: str, attached: bool = False):
+    async def _command(self, *args: str, attached: bool = False, output_limit: int = _DAEMON_RESPONSE_BYTES):
         try:
             executable = shutil.which(self._executable)
             if executable is None:
@@ -58,17 +60,19 @@ class DockerPolicy:
                 stdin=asyncio.subprocess.PIPE if attached else asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE if attached else asyncio.subprocess.DEVNULL,
-                limit=FRAME_BYTES if attached else _DAEMON_RESPONSE_BYTES,
+                limit=FRAME_BYTES if attached else output_limit,
             )
         except OSError:
             raise TransportError(TransportCode.PROCESS_ERROR) from None
 
-    async def _management(self, deadline: float, *args: str) -> bytes:
-        process = await before_deadline(self._command(*args), deadline)
+    async def _management(
+        self, deadline: float, *args: str, output_limit: int = _DAEMON_RESPONSE_BYTES,
+    ) -> bytes:
+        process = await before_deadline(self._command(*args, output_limit=output_limit), deadline)
         assert process.stdout is not None
         try:
             try:
-                await before_deadline(process.stdout.readexactly(_DAEMON_RESPONSE_BYTES), deadline)
+                await before_deadline(process.stdout.readexactly(output_limit), deadline)
             except asyncio.IncompleteReadError as error:
                 result = error.partial.strip()
             else:
@@ -85,12 +89,22 @@ class DockerPolicy:
 
     async def _local_image_id(self, deadline: float) -> str:
         result = await self._management(
-            deadline, "image", "inspect", "--format", "{{.Id}} {{json .Config.Volumes}}", self._image,
+            deadline, "image", "inspect", self._image, output_limit=_IMAGE_INSPECT_BYTES,
         )
-        image_id, _, volumes = result.partition(b" ")
-        if _IMAGE_ID.fullmatch(image_id) is None or volumes not in (b"null", b"{}"):
+        try:
+            images = json.loads(result)
+        except (ValueError, RecursionError):
+            raise TransportError(TransportCode.PROCESS_ERROR) from None
+        if type(images) is not list or len(images) != 1 or type(images[0]) is not dict:
             raise TransportError(TransportCode.PROCESS_ERROR)
-        return image_id.decode("ascii")
+        config = images[0].get("Config")
+        image_id = images[0].get("Id")
+        if (
+            type(config) is not dict or config.get("Volumes") not in (None, {})
+            or type(image_id) is not str or _IMAGE_ID.fullmatch(image_id) is None
+        ):
+            raise TransportError(TransportCode.PROCESS_ERROR)
+        return image_id
 
     async def _container_absent(self, deadline: float, name: str) -> bool:
         try:

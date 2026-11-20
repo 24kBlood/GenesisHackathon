@@ -185,7 +185,7 @@ class EvaluatorIsolationTests(unittest.IsolatedAsyncioTestCase):
             close=AsyncMock(),
         )
         commands = AsyncMock(side_effect=[
-            ("sha256:" + "0" * 64 + " null").encode("ascii"),
+            json.dumps([{"Id": "sha256:" + "0" * 64, "Config": {}}]).encode("ascii"),
             b"created",
             TransportError(TransportCode.PROCESS_ERROR),
         ])
@@ -230,6 +230,33 @@ class DockerConfigurationTests(unittest.TestCase):
         self.assertLessEqual(set(_host_environment()), {"PATH", "SYSTEMROOT", "WINDIR"})
         with self.assertRaises(ValueError):
             DockerPolicy("--privileged")
+
+
+class DockerImageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_accepts_absent_null_or_empty_volumes_in_local_image_config(self):
+        runner = DockerPolicy("synthetic:local")
+        image_id = "sha256:" + "a" * 64
+        deadline = monotonic() + 10
+        for config in ({"Entrypoint": ["python"]}, {"Volumes": None}, {"Volumes": {}}):
+            with self.subTest(config=config):
+                inspect = AsyncMock(return_value=json.dumps([{"Id": image_id, "Config": config}]).encode("ascii"))
+                with patch.object(runner, "_management", inspect):
+                    self.assertEqual(await runner._local_image_id(deadline), image_id)
+                inspect.assert_awaited_once_with(deadline, "image", "inspect", "synthetic:local", output_limit=65536)
+
+    async def test_rejects_declared_volumes_or_unverifiable_image_config(self):
+        runner = DockerPolicy("synthetic:local")
+        image_id = "sha256:" + "a" * 64
+        for image in (
+            {"Id": image_id, "Config": {"Volumes": {"/data": {}}}},
+            {"Id": image_id, "Config": None},
+            {"Id": "not-local-id", "Config": {}},
+        ):
+            with self.subTest(image=image):
+                inspect = AsyncMock(return_value=json.dumps([image]).encode("ascii"))
+                with patch.object(runner, "_management", inspect), self.assertRaises(TransportError) as failure:
+                    await runner._local_image_id(monotonic() + 10)
+                self.assertEqual(failure.exception.code, TransportCode.PROCESS_ERROR)
 
 
 @unittest.skipUnless(os.environ.get("GENESIS_POLICY_SMOKE_IMAGE"), "requires the local Docker smoke image")
