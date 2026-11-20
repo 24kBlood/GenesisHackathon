@@ -314,6 +314,21 @@ class AuditorEnv:
             )
         return deepcopy(self._terminal_result)
 
+    @property
+    def seconds_remaining(self) -> float:
+        """Return the trusted coordinator's time budget after reset."""
+        if self._episode is None:
+            raise RuntimeError("reset is required before reading the deadline")
+        return max(0, self._deadline - self._clock())
+
+    def truncate(self, *, reason: TruncationReason = "transport") -> StepResult:
+        """Close the episode after interruption of the external policy transport."""
+        if self._episode is None:
+            raise RuntimeError("reset is required before truncation")
+        if self._completion is not None:
+            return self._terminal_reply(0.0)
+        return self._finish(None, terminated=False, reason=reason)
+
     def step(self, action: object) -> StepResult:
         if self._episode is None:
             raise RuntimeError("reset is required before step")
