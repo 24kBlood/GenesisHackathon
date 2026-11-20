@@ -30,7 +30,8 @@ def _csv(columns: tuple[str, ...], rows) -> bytes:
     return stream.getvalue().encode("utf-8")
 
 
-def _public_files(public: PublicEpisode) -> dict[str, bytes]:
+def public_files(public: PublicEpisode) -> dict[str, bytes]:
+    """Serialize only the six public v1 artifacts, in canonical UTF-8/LF."""
     return {
         "manifest.json": _json_line(public.manifest),
         "policy.json": _json_line(public.policy),
@@ -52,7 +53,7 @@ def export_episode(episode: Episode, directory: Path | str) -> None:
     if target.exists():
         raise FileExistsError(target)
     files = {
-        "public": _public_files(episode.public),
+        "public": public_files(episode.public),
         "evaluator-only": {
             "truth.json": _json_line(episode.evaluator.truth),
             "provenance.json": _json_line(episode.evaluator.provenance),

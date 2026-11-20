@@ -1,0 +1,3 @@
+{"amount_minor":13200,"currency":"KZT","doc_id":"doc-3e460f19a135d7e0cb626564","invoice_refs":["invoice-ff48e123cd437cf0dcfb809c"],"payment_id":"payment-9f57e6ed13b71c6ba5d01f2c","timestamp":"2026-11-06T10:00:00+05:00"}
+{"amount_minor":20000,"currency":"KZT","doc_id":"doc-2f28c6c498b96aae6f61308b","invoice_refs":["invoice-1df871c7a46a038123eca6f6"],"payment_id":"payment-8182b1c87b8856d8a79bdeac","timestamp":"2026-11-10T10:00:00+05:00"}
+{"amount_minor":15500,"currency":"JPY","doc_id":"doc-f9b61775d1f912ebcd255738","invoice_refs":["invoice-b9b7c21888db67ce3001b7fc"],"payment_id":"payment-0e42baa57012050881d8eba2","timestamp":"2026-11-08T10:00:00+05:00"}
