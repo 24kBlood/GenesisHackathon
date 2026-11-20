@@ -98,9 +98,12 @@ def _fx_mutations(public: PublicEpisode, count: int) -> Iterator[_Mutation]:
         posted = convert_minor(payment["amount_minor"], source, target, wrong_rate, exponents, rounding)
         if posted == correct:
             continue
+        documents = (payment["doc_id"], f"fx:{day}:{source}:{target}", "policy")
+        if public.policy["fx_date_rule"] == "invoice_date" and invoice is not None:
+            documents += (invoice["doc_id"],)
         yield _Mutation(
             ({**debit, "debit_minor": posted}, {**credit, "credit_minor": posted}),
-            (payment["doc_id"], f"fx:{day}:{source}:{target}", "policy"),
+            documents,
             abs(correct - posted),
             {"posted_minor": correct, "applied_rate": rate},
             {"posted_minor": posted, "applied_rate": wrong_rate},

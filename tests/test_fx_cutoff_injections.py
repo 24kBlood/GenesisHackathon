@@ -6,6 +6,7 @@ from itertools import count
 from unittest import TestCase
 
 from genesis.domain.money import convert_minor
+from genesis.evaluation.matcher import match
 from genesis.generation import generate_episode
 from genesis.generation.fx_cutoff import apply_fx_cutoff_errors, in_period
 
@@ -46,6 +47,31 @@ class FxCutoffInjectionTests(TestCase):
     def test_rounding_on_half_a_target_minor_unit(self):
         self.assertEqual(convert_minor(1, "JPY", "KZT", "1.005", {"JPY": 0, "KZT": 2}, "ROUND_HALF_EVEN"), 100)
         self.assertEqual(convert_minor(1, "JPY", "KZT", "1.005", {"JPY": 0, "KZT": 2}, "ROUND_HALF_UP"), 101)
+        payment = next(doc for doc in self.public.payments if doc["currency"] == "JPY")
+        invoice_id, = payment["invoice_refs"]
+        public = replace(
+            self.public,
+            payments=[{**doc, "amount_minor": 1} if doc is payment else doc for doc in self.public.payments],
+            invoices=[
+                {**doc, "total_minor": 1, "line_items": [
+                    {**doc["line_items"][0], "quantity": 1, "unit_price_minor": 1, "amount_minor": 1}
+                ]} if doc["invoice_id"] == invoice_id else doc for doc in self.public.invoices
+            ],
+            fx=[{**row, "rate": "1.005"} for row in self.public.fx],
+            ledger=[
+                {**row, "debit_minor": 100 if row["debit_minor"] else 0,
+                 "credit_minor": 100 if row["credit_minor"] else 0}
+                if row["invoice_id"] == invoice_id else row for row in self.public.ledger
+            ],
+        )
+        ledger, [issue], [change] = self.inject({"fx_conversion": 1}, public)
+        self.assertEqual(change["before"]["posted_minor"], 100)
+        self.assertEqual(change["after"]["posted_minor"], 102)
+        self.assertEqual(issue["expected_amount_minor"], 2)
+        self.assertEqual(
+            {(row["debit_minor"], row["credit_minor"]) for row in ledger if row["row_id"] in issue["affected_ids"]},
+            {(102, 0), (0, 102)},
+        )
 
     def test_alternative_date_rules_use_public_dates_and_missing_quote_rejects(self):
         for rule, doc_date in (
@@ -57,7 +83,23 @@ class FxCutoffInjectionTests(TestCase):
                 day = (invoice if doc_date == "issued_at" else payment)[doc_date][:10]
                 public = replace(self.public, policy={**self.public.policy, "fx_date_rule": rule})
                 _, [issue], _ = self.inject({"fx_conversion": 1}, public)
-                self.assertIn(f"fx:{day}:JPY:KZT", issue["acceptable_evidence_sets"][0])
+                evidence = {
+                    *issue["affected_ids"], payment["doc_id"], f"fx:{day}:JPY:KZT", "policy",
+                }
+                if rule == "invoice_date":
+                    evidence.add(invoice["doc_id"])
+                evidence_set, = issue["acceptable_evidence_sets"]
+                self.assertCountEqual(evidence_set, evidence)
+                if rule == "invoice_date":
+                    finding = {
+                        "type": issue["type"], "affected_ids": issue["affected_ids"],
+                        "claimed_amount_minor": issue["expected_amount_minor"],
+                        "currency": issue["currency"], "evidence_ids": sorted(evidence), "explanation": "",
+                    }
+                    self.assertEqual(match([finding], [issue], evidence).tp, 1)
+                    finding["evidence_ids"].remove(invoice["doc_id"])
+                    result = match([finding], [issue], evidence)
+                    self.assertEqual((result.tp, result.fp, result.fn), (0, 1, 1))
                 public.fx = [row for row in public.fx if row["date"] != day]
                 with self.assertRaisesRegex(ValueError, "fx_conversion candidates"):
                     self.inject({"fx_conversion": 1}, public)
