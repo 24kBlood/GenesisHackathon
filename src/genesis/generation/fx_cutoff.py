@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from genesis.domain.enums import FindingType
 from genesis.domain.models import TruthIssue
+from genesis.domain.money import convert_minor
 
 if TYPE_CHECKING:
     from .company import Invoice, LedgerRow, Payment, PublicEpisode
@@ -23,15 +24,6 @@ class _Mutation:
     amount: int
     before: dict[str, Any]
     after: dict[str, Any]
-
-
-def convert_minor(
-    amount: int, source: str, target: str, rate: str, exponents: dict[str, int], rounding: str,
-) -> int:
-    with localcontext(Context(prec=64)):
-        source_major = Decimal(amount).scaleb(-exponents[source])
-        target_minor = (source_major * Decimal(rate)).scaleb(exponents[target])
-        return int(target_minor.quantize(Decimal(1), rounding=rounding))
 
 
 def in_period(timestamp: str, policy: dict[str, str]) -> bool:

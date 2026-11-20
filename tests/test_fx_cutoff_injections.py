@@ -5,16 +5,15 @@ from decimal import Decimal
 from itertools import count
 from unittest import TestCase
 
+from genesis.domain.money import convert_minor
 from genesis.generation import generate_episode
-from genesis.generation.fx_cutoff import apply_fx_cutoff_errors, convert_minor, in_period
+from genesis.generation.fx_cutoff import apply_fx_cutoff_errors, in_period
 
 
 class FxCutoffInjectionTests(TestCase):
     def setUp(self):
         clean = generate_episode(413, {"schema_version": "1.0.0", "error_counts": {}})
-        self.public = replace(
-            clean.public, policy={**clean.public.policy, "recognition_date_rule": "document_date"},
-        )
+        self.public = clean.public
 
     def inject(self, counts, public=None):
         ids = count()

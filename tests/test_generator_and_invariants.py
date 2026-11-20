@@ -1,7 +1,7 @@
 import json
 import tempfile
 import unittest
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from decimal import Decimal, localcontext
 from pathlib import Path
@@ -133,7 +133,7 @@ class CleanGeneratorTests(unittest.TestCase):
             {**CLEAN, "error_counts": {"made_up": 0}},
             {**CLEAN, "error_counts": {"fx_conversion": False}},
             {**CLEAN, "error_counts": {"fx_conversion": -1}},
-            {**CLEAN, "error_counts": {"fx_conversion": 1}},
+            {**CLEAN, "error_counts": {"fx_conversion": 2}},
         ):
             with self.subTest(config=config), self.assertRaises(ValueError):
                 generate_episode(0, config)
@@ -144,3 +144,31 @@ class CleanGeneratorTests(unittest.TestCase):
             context.prec = 3
             self.assertEqual(generate_episode(413, CLEAN), expected)
         self.assertEqual(generate_episode(413, json.loads(json.dumps(CLEAN))), expected)
+
+
+class ConfiguredGeneratorTests(unittest.TestCase):
+    def test_all_four_counts_are_independent_and_reproducible(self):
+        mixed = {
+            "duplicate_invoice": 1, "payment_allocation": 1,
+            "fx_conversion": 1, "period_cutoff": 1,
+        }
+        for seed in (0, 413):
+            for counts in ({}, *({name: 1} for name in mixed), mixed):
+                with self.subTest(seed=seed, counts=counts):
+                    config = {**CLEAN, "error_counts": counts}
+                    episode = generate_episode(seed, config)
+                    with localcontext() as context:
+                        context.prec = 3
+                        self.assertEqual(episode, generate_episode(seed, config))
+                    issues = episode.evaluator.truth["issues"]
+                    changes = episode.evaluator.provenance["changes"]
+                    self.assertEqual(Counter(issue["type"] for issue in issues), counts)
+                    self.assertEqual({issue["issue_id"]: issue["affected_ids"] for issue in issues}, {
+                        change["issue_id"]: change["affected_ids"] for change in changes
+                    })
+                    self.assertEqual(len(changes), len(issues))
+                    if issues:
+                        self.assertEqual(
+                            len(set().union(*(set(issue["affected_ids"]) for issue in issues))),
+                            sum(len(issue["affected_ids"]) for issue in issues),
+                        )

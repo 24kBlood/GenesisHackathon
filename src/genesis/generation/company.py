@@ -2,15 +2,17 @@
 
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
-from decimal import Context, Decimal, ROUND_HALF_EVEN, localcontext
+from decimal import ROUND_HALF_EVEN
 from hashlib import sha256
 from random import Random
 from typing import Any, Mapping, TypedDict
 
 from genesis.domain.enums import FindingType
 from genesis.domain.models import EpisodeTruth
+from genesis.domain.money import convert_minor
 
 from .allocation import apply_allocation_errors
+from .fx_cutoff import apply_fx_cutoff_errors
 
 
 class LedgerRow(TypedDict):
@@ -94,7 +96,6 @@ BASE_CURRENCY = "KZT"
 EXPONENTS = {"KZT": 2, "JPY": 0}
 LOCAL_OFFSET = timezone(timedelta(hours=5))
 FINDING_TYPES = frozenset(FindingType)
-SUPPORTED_ERRORS = {FindingType.DUPLICATE_INVOICE, FindingType.PAYMENT_ALLOCATION}
 
 
 def _generation_config(config: Mapping[str, Any]) -> dict[str, Any]:
@@ -114,8 +115,6 @@ def _generation_config(config: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError(f"unknown error type: {name!r}")
         if type(count) is not int or count < 0:
             raise ValueError("error counts must be non-negative integers")
-        if count and name not in SUPPORTED_ERRORS:
-            raise ValueError(f"generation does not yet support error type: {name!r}")
         normalized[str(name)] = count
     interactions = config.get("interaction_scenarios", [])
     distractors = config.get("include_distractors", False)
@@ -165,10 +164,7 @@ def _history(seed: int) -> tuple[date, date, list[Obligation]]:
 
 
 def _base_amount(amount: int, source_currency: str, rate: str) -> int:
-    with localcontext(Context(prec=28, rounding=ROUND_HALF_EVEN)):
-        amount_major = Decimal(amount).scaleb(-EXPONENTS[source_currency])
-        target_minor = (amount_major * Decimal(rate)).scaleb(EXPONENTS[BASE_CURRENCY])
-        return int(target_minor.quantize(Decimal(1)))
+    return convert_minor(amount, source_currency, BASE_CURRENCY, rate, EXPONENTS, ROUND_HALF_EVEN)
 
 
 class _Ids:
@@ -275,6 +271,7 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
         "period_start": _timestamp(start, hour=0),
         "period_end": _timestamp(end, hour=0),
         "rounding_mode": ROUND_HALF_EVEN,
+        "recognition_date_rule": "document_date",
     }
     manifest = {
         "schema_version": SCHEMA_VERSION, "episode_id": episode_id,
@@ -286,8 +283,13 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
         "document_count": len(invoices) + len(payments),
         **{key: policy[key] for key in ("timezone", "period_start", "period_end", "rounding_mode")},
     }
+    public = PublicEpisode(manifest, policy, ledger, invoices, payments, fx)
+    if counts.get(FindingType.FX_CONVERSION) or counts.get(FindingType.PERIOD_CUTOFF):
+        public.ledger, fx_cutoff_issues, fx_cutoff_changes = apply_fx_cutoff_errors(public, counts, ids.new)
+        issues.extend(fx_cutoff_issues)
+        changes.extend(fx_cutoff_changes)
     return Episode(
-        public=PublicEpisode(manifest, policy, ledger, invoices, payments, fx),
+        public=public,
         evaluator=EvaluatorEpisode(
             truth={"episode_id": episode_id, "issues": issues},
             provenance={
