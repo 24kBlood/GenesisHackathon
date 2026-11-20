@@ -55,6 +55,9 @@ class ToolCode(StrEnum):
     NOT_FOUND = "not_found"
     INVALID_CURSOR = "invalid_cursor"
     INVALID_ARGUMENT = "invalid_argument"
+    INVALID_EXPRESSION = "invalid_expression"
+    DIVISION_BY_ZERO = "division_by_zero"
+    CALCULATION_LIMIT = "calculation_limit"
 
 
 class ToolError(Exception):
@@ -187,7 +190,12 @@ def _select(value: Mapping, fields: tuple[str, ...]) -> dict:
 
 
 def _project_policy(value: Mapping) -> dict:
-    return _select(value, ("fx_date_rule", *_PERIOD_FIELDS))
+    policy = _select(value, ("fx_date_rule", *_PERIOD_FIELDS))
+    if "recognition_date_rule" in value:
+        if value["recognition_date_rule"] != "document_date":
+            raise ValueError("invalid recognition date rule")
+        policy["recognition_date_rule"] = "document_date"
+    return policy
 
 
 def _project_record(value: Mapping, *, document: bool = False) -> dict:
@@ -207,6 +215,13 @@ def _project_record(value: Mapping, *, document: bool = False) -> dict:
         record["line_items"] = [
             _select(item, tuple(key for key in fields if key in item)) for item in value["line_items"]
         ]
+    elif discriminator == "payment_id" and ("payment_kind" in value or "refund_of_payment_id" in value):
+        if (
+            value.get("payment_kind") != "refund" or not _is_id(value.get("refund_of_payment_id"))
+            or record["amount_minor"] <= 0 or not record["invoice_refs"]
+        ):
+            raise ValueError("invalid refund")
+        record.update(payment_kind="refund", refund_of_payment_id=value["refund_of_payment_id"])
     return record
 
 

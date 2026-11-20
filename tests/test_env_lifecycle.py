@@ -206,7 +206,7 @@ class LifecycleTests(unittest.TestCase):
         env.terminal_result.submission["findings"].clear()
         self.assertTrue(env.terminal_result.submission["findings"])
 
-    def test_projection_excludes_fields_outside_current_policy_and_payment_schema(self):
+    def test_projection_preserves_schema_fields_and_excludes_private_metadata(self):
         policy = {**self.fixture.policy, "recognition_date_rule": "document_date", "seed": 42}
         refund = {
             **self.fixture.payments[0], "payment_kind": "refund", "refund_of_payment_id": "pay-initial",
@@ -224,7 +224,9 @@ class LifecycleTests(unittest.TestCase):
         self.fixture.validators["observation"].validate(initial)
         rule, *_ = self.step(env, {"type": "get_document", "doc_id": "policy"})
         document, *_ = self.step(env, {"type": "get_document", "doc_id": "refund"})
-        self.assertEqual(initial["policy"], self.fixture.policy)
-        self.assertEqual(rule["document"], self.fixture.policy)
-        self.assertEqual(document["document"], self.fixture.payments[0])
+        self.assertEqual(initial["policy"], {**self.fixture.policy, "recognition_date_rule": "document_date"})
+        self.assertEqual(rule["document"], initial["policy"])
+        self.assertEqual(document["document"], {
+            **self.fixture.payments[0], "payment_kind": "refund", "refund_of_payment_id": "pay-initial",
+        })
         self.assertTrue(contract.PRIVATE_KEYS.isdisjoint(contract.field_names([initial, rule, document])))
