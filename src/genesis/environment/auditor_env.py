@@ -12,7 +12,9 @@ from typing import Literal, Protocol, cast
 
 from genesis.domain.enums import FindingType
 from genesis.domain.models import FindingsSubmission
+from genesis.evaluation.matcher import MatchResult
 from genesis.evaluation.reward import TerminalScore
+from genesis.evaluation.terminal import TerminalEvaluation
 
 
 MAX_STEPS = 100
@@ -49,6 +51,8 @@ Observation = dict[str, object]
 PublicAction = dict[str, object]
 Handler = Callable[[PublicAction], Mapping[str, object]]
 StepResult = tuple[Observation, float, bool, bool, dict[str, object]]
+TruncationReason = Literal["step_limit", "timeout", "transport"]
+TerminalReason = Literal["submitted", "invalid_submission", "step_limit", "timeout", "transport"]
 
 
 class ToolCode(StrEnum):
@@ -71,7 +75,7 @@ class ToolError(Exception):
 class TerminalEvaluator(Protocol):
     def __call__(
         self, submission: FindingsSubmission, inspection_steps: int, *, invalid_submission: bool,
-    ) -> TerminalScore: ...
+    ) -> TerminalEvaluation | TerminalScore: ...
 
 
 @dataclass(frozen=True)
@@ -97,6 +101,10 @@ class TerminalResult:
     invalid_submission: bool
     terminated: bool
     truncated: bool
+    matching: MatchResult | None
+    total_steps: int
+    wall_time_seconds: float
+    reason: TerminalReason
 
 
 @dataclass(frozen=True)
@@ -104,6 +112,8 @@ class _Completion:
     submission: FindingsSubmission
     invalid_submission: bool
     terminated: bool
+    reason: TerminalReason
+    wall_time_seconds: float
 
     @property
     def status(self) -> str:
@@ -263,13 +273,14 @@ class AuditorEnv:
             "policy": _project_policy(episode.policy),
             "remaining_steps": MAX_STEPS,
         })
-        deadline = self._clock() + self._timeout
+        started_at = self._clock()
         self._episode = episode
         self._episode_id = manifest["episode_id"]
         self._remaining = MAX_STEPS
         self._inspection_steps = 0
         self._cursors: set[tuple[str, str]] = set()
-        self._deadline = deadline
+        self._started_at = started_at
+        self._deadline = started_at + self._timeout
         self._completion = None
         self._terminal_result = None
         return observation, {}
@@ -282,13 +293,24 @@ class AuditorEnv:
             return None
         if self._terminal_result is None:
             assert self._episode is not None
-            score = self._episode.evaluate(
+            evaluation = self._episode.evaluate(
                 deepcopy(completion.submission), self._inspection_steps,
                 invalid_submission=completion.invalid_submission,
             )
+            if isinstance(evaluation, TerminalEvaluation):
+                matching, score = evaluation.matching, evaluation.score
+            else:
+                matching, score = None, evaluation
             self._terminal_result = TerminalResult(
-                completion.submission, score, completion.invalid_submission,
-                completion.terminated, not completion.terminated,
+                submission=completion.submission,
+                score=score,
+                invalid_submission=completion.invalid_submission,
+                terminated=completion.terminated,
+                truncated=not completion.terminated,
+                matching=matching,
+                total_steps=MAX_STEPS - self._remaining,
+                wall_time_seconds=completion.wall_time_seconds,
+                reason=completion.reason,
             )
         return deepcopy(self._terminal_result)
 
@@ -299,7 +321,7 @@ class AuditorEnv:
             # A late action receives flags and status only. Reward was emitted once.
             return self._terminal_reply(0.0)
         if self._clock() >= self._deadline:
-            return self._finish(None, terminated=False)
+            return self._finish(None, terminated=False, reason="timeout")
 
         self._remaining -= 1
         kind = action.get("type") if type(action) is dict else None
@@ -309,7 +331,7 @@ class AuditorEnv:
         self._inspection_steps += 1
         observation = self._research(action, kind)
         if self._remaining == 0:
-            return self._finish(None, terminated=False)
+            return self._finish(None, terminated=False, reason="step_limit")
         return {"remaining_steps": self._remaining, **observation}, 0.0, False, False, {}
 
     def _research(self, action: object, kind: object) -> dict:
@@ -349,10 +371,22 @@ class AuditorEnv:
             code = "tool_error"
         return {"error": {"code": code}}
 
-    def _finish(self, submission: FindingsSubmission | None, *, terminated: bool) -> StepResult:
+    def _finish(
+        self, submission: FindingsSubmission | None, *, terminated: bool,
+        reason: TruncationReason | None = None,
+    ) -> StepResult:
         empty: FindingsSubmission = {"episode_id": self._episode_id, "findings": []}
+        completion_reason: TerminalReason
+        if terminated:
+            completion_reason = "submitted" if submission is not None else "invalid_submission"
+        else:
+            completion_reason = reason or "transport"
         self._completion = _Completion(
-            submission if submission is not None else empty, terminated and submission is None, terminated,
+            submission=submission if submission is not None else empty,
+            invalid_submission=terminated and submission is None,
+            terminated=terminated,
+            reason=completion_reason,
+            wall_time_seconds=max(0.0, self._clock() - self._started_at),
         )
         if self._mode == "train":
             result = self.terminal_result
