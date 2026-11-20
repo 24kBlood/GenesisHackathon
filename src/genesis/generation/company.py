@@ -10,6 +10,8 @@ from typing import Any, Mapping, TypedDict
 from genesis.domain.enums import FindingType
 from genesis.domain.models import EpisodeTruth
 
+from .allocation import apply_allocation_errors
+
 
 class LedgerRow(TypedDict):
     row_id: str
@@ -92,9 +94,10 @@ BASE_CURRENCY = "KZT"
 EXPONENTS = {"KZT": 2, "JPY": 0}
 LOCAL_OFFSET = timezone(timedelta(hours=5))
 FINDING_TYPES = frozenset(FindingType)
+SUPPORTED_ERRORS = {FindingType.DUPLICATE_INVOICE, FindingType.PAYMENT_ALLOCATION}
 
 
-def _clean_config(config: Mapping[str, Any]) -> dict[str, Any]:
+def _generation_config(config: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(config, Mapping) or config.get("schema_version") != SCHEMA_VERSION:
         raise ValueError(f"configuration requires schema_version {SCHEMA_VERSION}")
     unexpected = config.keys() - {
@@ -111,8 +114,8 @@ def _clean_config(config: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError(f"unknown error type: {name!r}")
         if type(count) is not int or count < 0:
             raise ValueError("error counts must be non-negative integers")
-        if count:
-            raise ValueError("only clean generation is supported")
+        if count and name not in SUPPORTED_ERRORS:
+            raise ValueError(f"generation does not yet support error type: {name!r}")
         normalized[str(name)] = count
     interactions = config.get("interaction_scenarios", [])
     distractors = config.get("include_distractors", False)
@@ -196,17 +199,17 @@ def _post(
 
 
 def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
-    """Generate one clean episode from a v1 configuration and a supplied seed.
+    """Generate one episode from a v1 configuration and a supplied seed.
 
-    A bill credits accounts payable and debits expense in KZT. A full payment
-    debits that payable and credits bank in KZT; the payment document retains
-    the source currency. Foreign accrual and payment use equal spot quotes,
-    so the clean history does not book an FX gain or loss. One invoice is
-    left open and opening bank equity has no source-document references.
+    In the clean history, a bill credits accounts payable and debits expense
+    in KZT. A full payment debits that payable and credits bank in KZT, while
+    the payment document retains the source currency. Foreign accrual and
+    payment use equal spot quotes, so the clean history books no FX gain or
+    loss. One invoice is left open. Opening bank equity has no references.
     """
     if type(seed) is not int:
         raise ValueError("seed must be an integer")
-    normalized_config = _clean_config(config)
+    normalized_config = _generation_config(config)
     start, end, obligations = _history(seed)
     opening_balance = sum(_base_amount(
         item.total_minor, item.currency, item.conversion_rate,
@@ -254,6 +257,16 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
                         "target_currency": BASE_CURRENCY, "rate": item.conversion_rate,
                     })
 
+    counts = normalized_config["error_counts"]
+    issues, changes = apply_allocation_errors(
+        ledger, invoices, payments,
+        base_currency=BASE_CURRENCY,
+        duplicate_count=counts.get(FindingType.DUPLICATE_INVOICE, 0),
+        allocation_count=counts.get(FindingType.PAYMENT_ALLOCATION, 0),
+        rng=_rng(seed, "allocation-errors"),
+        new_id=ids.new,
+    )
+
     order = _rng(seed, "publication-order")
     for rows in (ledger, invoices, payments, fx):
         order.shuffle(rows)
@@ -276,14 +289,14 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
     return Episode(
         public=PublicEpisode(manifest, policy, ledger, invoices, payments, fx),
         evaluator=EvaluatorEpisode(
-            truth={"episode_id": episode_id, "issues": []},
+            truth={"episode_id": episode_id, "issues": issues},
             provenance={
                 "episode_id": episode_id, "seed": seed, "config": normalized_config,
                 "initial_history": {
                     "opening_bank_minor": opening_balance,
                     "obligations": [asdict(item) for item in obligations],
                 },
-                "changes": [],
+                "changes": changes,
             },
         ),
     )
