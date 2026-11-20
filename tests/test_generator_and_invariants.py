@@ -43,9 +43,14 @@ class CleanGeneratorTests(unittest.TestCase):
         registry = Registry().with_resources(
             (schema["$id"], Resource.from_contents(schema)) for schema in schemas.values()
         )
+        for include_distractors in (False, True):
+            with self.subTest(include_distractors=include_distractors):
+                self.assert_export_matches_schemas(schemas, registry, include_distractors)
+
+    def assert_export_matches_schemas(self, schemas, registry, include_distractors):
         with tempfile.TemporaryDirectory() as temporary:
             target = Path(temporary) / "episode"
-            export_episode(generate_episode(413, CLEAN), target)
+            export_episode(generate_episode(413, {**CLEAN, "include_distractors": include_distractors}), target)
             public, evaluator = target / "public", target / "evaluator-only"
             self.assertEqual({path.name for path in public.iterdir()}, {
                 "manifest.json", "policy.json", "ledger.csv", "fx.csv", "invoices.jsonl", "payments.jsonl",
@@ -72,6 +77,16 @@ class CleanGeneratorTests(unittest.TestCase):
             self.assertIn(",null,null", (public / "ledger.csv").read_text(encoding="utf-8"))
             self.assertEqual(artifacts["truth"][0]["issues"], [])
             self.assertEqual(artifacts["provenance"][0]["changes"], [])
+            if include_distractors:
+                refund, = [payment for payment in artifacts["payment"] if "payment_kind" in payment]
+                payment_schema = Draft202012Validator(schemas["payment"], registry=registry)
+                for invalid in (
+                    {key: value for key, value in refund.items() if key != "refund_of_payment_id"},
+                    {key: value for key, value in refund.items() if key != "payment_kind"},
+                    {**refund, "amount_minor": -refund["amount_minor"]},
+                    {**refund, "invoice_refs": None},
+                ):
+                    self.assertFalse(payment_schema.is_valid(invalid))
 
     def test_public_documents_reconcile_with_balanced_postings(self):
         public = generate_episode(413, CLEAN).public
@@ -144,6 +159,154 @@ class CleanGeneratorTests(unittest.TestCase):
             context.prec = 3
             self.assertEqual(generate_episode(413, CLEAN), expected)
         self.assertEqual(generate_episode(413, json.loads(json.dumps(CLEAN))), expected)
+
+
+class DistractorTests(unittest.TestCase):
+    def setUp(self):
+        self.config = {**CLEAN, "include_distractors": True}
+        self.episode = generate_episode(413, self.config)
+        self.public = self.episode.public
+
+    def test_consecutive_installments_are_each_fully_allocated(self):
+        grouped = defaultdict(list)
+        for payment in self.public.payments:
+            grouped[payment["invoice_refs"][0]].append(payment)
+        # Identify the split only from public documents and ordinary payment roles.
+        invoice_id, = [key for key, payments in grouped.items()
+                       if len(payments) == 2 and all("payment_kind" not in p for p in payments)]
+        invoice = next(invoice for invoice in self.public.invoices if invoice["invoice_id"] == invoice_id)
+        payments = sorted(grouped[invoice_id], key=lambda p: p["timestamp"])
+        balances = self.assert_installment_history(self.public, invoice, payments)
+        self.assertEqual(balances, [invoice["total_minor"] - payments[0]["amount_minor"], 0])
+        self.assertGreater(balances[0], 0)
+        self.assertEqual(len({p["doc_id"] for p in payments}), 2)
+        self.assertEqual(len({p["payment_id"] for p in payments}), 2)
+
+        # An actually underallocated payment has the same public roles only
+        # for part of its amount, so the independent reconciliation rejects it.
+        anomalous = generate_episode(413, {**self.config, "error_counts": {"payment_allocation": 1}})
+        issue, = anomalous.evaluator.truth["issues"]
+        payment, = [p for p in anomalous.public.payments if p["payment_id"] in issue["affected_ids"]]
+        invoice, = [i for i in anomalous.public.invoices if i["invoice_id"] in payment["invoice_refs"]]
+        with self.assertRaisesRegex(AssertionError, "each payment"):
+            self.assert_installment_history(anomalous.public, invoice, [payment])
+
+    def assert_installment_history(self, public, invoice, payments):
+        outstanding = invoice["total_minor"]
+        balances = []
+        for payment in payments:
+            payment_id = payment["payment_id"]
+            rows = [row for row in public.ledger if row["payment_id"] == payment_id]
+            self.assertTrue(invoice["issued_at"] < payment["timestamp"] < invoice["due_at"])
+            self.assertEqual(payment["currency"], invoice["currency"])
+            allocated = sum(row["debit_minor"] for row in rows
+                            if row["account"] == "accounts_payable"
+                            and row["invoice_id"] == invoice["invoice_id"])
+            self.assertEqual(allocated, payment["amount_minor"], "each payment must reconcile")
+            self.assertEqual(sum(row["credit_minor"] for row in rows if row["account"] == "bank"),
+                             payment["amount_minor"])
+            self.assertEqual({row["invoice_id"] for row in rows}, {invoice["invoice_id"]})
+            self.assertEqual({row["currency"] for row in rows}, {payment["currency"]})
+            self.assertEqual({row["timestamp"] for row in rows}, {payment["timestamp"]})
+            outstanding -= allocated
+            self.assertGreaterEqual(outstanding, 0)
+            balances.append(outstanding)
+        return balances
+
+    def assert_refund_reconciles(self, public, refund):
+        original = next(
+            (p for p in public.payments if p["payment_id"] == refund["refund_of_payment_id"]), None,
+        )
+        self.assertIsNotNone(original, "refund source must resolve")
+        self.assertNotIn("payment_kind", original)
+        self.assertEqual(original["currency"], refund["currency"])
+        self.assertEqual(original["invoice_refs"], refund["invoice_refs"])
+        invoice_id, = refund["invoice_refs"]
+        invoice = next(invoice for invoice in public.invoices if invoice["invoice_id"] == invoice_id)
+        self.assertEqual(invoice["currency"], refund["currency"])
+        self.assertLess(invoice["issued_at"], original["timestamp"])
+        self.assertLess(original["timestamp"], refund["timestamp"])
+        net = original["amount_minor"] - refund["amount_minor"]
+        self.assertEqual(net, invoice["total_minor"], "refund amount must reconcile")
+        self.assertGreater(refund["amount_minor"], 0)
+
+        def postings(payment):
+            rows = [row for row in public.ledger if row["payment_id"] == payment["payment_id"]]
+            self.assertEqual({row["currency"] for row in rows}, {payment["currency"]})
+            self.assertEqual({row["invoice_id"] for row in rows}, {invoice_id})
+            self.assertEqual({row["timestamp"] for row in rows}, {payment["timestamp"]})
+            return Counter({account: sum(
+                row["debit_minor"] - row["credit_minor"] for row in rows if row["account"] == account
+            ) for account in {row["account"] for row in rows}})
+
+        self.assertEqual(postings(original), {
+            "accounts_payable": net, "vendor_receivable": refund["amount_minor"],
+            "bank": -original["amount_minor"],
+        })
+        self.assertEqual(postings(refund), {
+            "bank": refund["amount_minor"], "vendor_receivable": -refund["amount_minor"],
+        })
+        return invoice
+
+    def test_refund_reverses_the_publicly_identifiable_overpayment(self):
+        refund, = [p for p in self.public.payments if p.get("payment_kind") == "refund"]
+        self.assert_refund_reconciles(self.public, refund)
+        with self.assertRaisesRegex(AssertionError, "refund amount"):
+            self.assert_refund_reconciles(self.public, {**refund, "amount_minor": refund["amount_minor"] + 1})
+        with self.assertRaisesRegex(AssertionError, "refund source"):
+            self.assert_refund_reconciles(self.public, {**refund, "refund_of_payment_id": "unknown"})
+
+    def test_equal_amounts_are_independent_and_each_accrues_once(self):
+        obligations = defaultdict(list)
+        for invoice in self.public.invoices:
+            signature = (invoice["entity_id"], invoice["currency"], invoice["total_minor"])
+            obligations[signature].append(invoice)
+        pair, = [invoices for invoices in obligations.values() if len(invoices) == 2]
+        self.assertEqual(len({invoice["invoice_id"] for invoice in pair}), 2)
+        self.assertEqual(len({invoice["doc_id"] for invoice in pair}), 2)
+        self.assertEqual(len({invoice["issued_at"] for invoice in pair}), 2)
+        self.assertEqual(len({invoice["line_items"][0]["description"] for invoice in pair}), 2)
+        for invoice in pair:
+            accrual = [r for r in self.public.ledger
+                       if r["invoice_id"] == invoice["invoice_id"] and r["payment_id"] is None]
+            amount = invoice["total_minor"]
+            self.assertCountEqual(
+                [(row["account"], row["debit_minor"], row["credit_minor"]) for row in accrual],
+                [("expense", amount, 0), ("accounts_payable", 0, amount)],
+            )
+        self.assertEqual(self.episode.evaluator.truth["issues"], [])
+        self.assertEqual(self.episode.evaluator.provenance["changes"], [])
+
+    def test_seed_config_normalization_opening_funds_and_error_compatibility(self):
+        all_counts = dict.fromkeys(("duplicate_invoice", "payment_allocation", "fx_conversion", "period_cutoff"), 1)
+        zero_counts = dict.fromkeys(all_counts, 0)
+        for seed in (0, 413):
+            for enabled in (False, True):
+                with self.subTest(seed=seed, include_distractors=enabled):
+                    current = generate_episode(seed, {**CLEAN, "include_distractors": enabled})
+                    self.assertEqual(current, generate_episode(seed, {
+                        **CLEAN, "include_distractors": enabled, "error_counts": zero_counts,
+                    }))
+                    if not enabled:
+                        self.assertEqual(current, generate_episode(seed, CLEAN))
+                    else:
+                        self.assertIn("distractor_operations", current.evaluator.provenance["initial_history"])
+                    public = current.public
+                    self.assertEqual(public.manifest["document_count"], len(public.invoices) + len(public.payments))
+                    self.assertEqual(len({row["row_id"] for row in public.ledger}), len(public.ledger))
+                    self.assertEqual(sum(row["debit_minor"] - row["credit_minor"] for row in public.ledger), 0)
+                    cash = 0
+                    per_timestamp = defaultdict(int)
+                    for row in public.ledger:
+                        if row["account"] == "bank":
+                            per_timestamp[row["timestamp"]] += row["debit_minor"] - row["credit_minor"]
+                    for timestamp in sorted(per_timestamp):
+                        cash += per_timestamp[timestamp]
+                        self.assertGreaterEqual(cash, 0)
+            combined = generate_episode(seed, {**self.config, "error_counts": all_counts})
+            self.assertEqual(Counter(issue["type"] for issue in combined.evaluator.truth["issues"]), all_counts)
+            refund, = [p for p in combined.public.payments if p.get("payment_kind") == "refund"]
+            self.assert_refund_reconciles(combined.public, refund)
 
 
 class ConfiguredGeneratorTests(unittest.TestCase):

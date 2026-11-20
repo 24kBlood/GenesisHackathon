@@ -3,15 +3,17 @@
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_EVEN
+from functools import partial
 from hashlib import sha256
 from random import Random
-from typing import Any, Mapping, TypedDict
+from typing import Any, Literal, Mapping, NotRequired, TypedDict
 
 from genesis.domain.enums import FindingType
 from genesis.domain.models import EpisodeTruth
 from genesis.domain.money import convert_minor
 
 from .allocation import apply_allocation_errors
+from .distractors import add_clean_distractors, plan_clean_distractors
 from .fx_cutoff import apply_fx_cutoff_errors
 
 
@@ -45,6 +47,8 @@ class Payment(TypedDict):
     currency: str
     amount_minor: int
     invoice_refs: list[str]
+    payment_kind: NotRequired[Literal["refund"]]
+    refund_of_payment_id: NotRequired[str]
 
 
 class FxQuote(TypedDict):
@@ -115,16 +119,17 @@ def _generation_config(config: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError(f"unknown error type: {name!r}")
         if type(count) is not int or count < 0:
             raise ValueError("error counts must be non-negative integers")
-        normalized[str(name)] = count
+        if count:
+            normalized[str(name)] = count
     interactions = config.get("interaction_scenarios", [])
     distractors = config.get("include_distractors", False)
     if not isinstance(interactions, list) or type(distractors) is not bool:
         raise ValueError("invalid interaction_scenarios or include_distractors")
-    if interactions or distractors:
-        raise ValueError("interactions and distractors are not supported")
+    if interactions:
+        raise ValueError("interactions are not supported")
     result = {"schema_version": SCHEMA_VERSION, "error_counts": normalized}
-    if "include_distractors" in config:
-        result["include_distractors"] = False
+    if distractors:
+        result["include_distractors"] = True
     if "interaction_scenarios" in config:
         result["interaction_scenarios"] = []
     return result
@@ -207,9 +212,15 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
         raise ValueError("seed must be an integer")
     normalized_config = _generation_config(config)
     start, end, obligations = _history(seed)
+    distractors = (
+        plan_clean_distractors(_rng(seed, "clean-distractors"))
+        if normalized_config.get("include_distractors") else None
+    )
     opening_balance = sum(_base_amount(
         item.total_minor, item.currency, item.conversion_rate,
     ) for item in obligations)
+    if distractors is not None:
+        opening_balance += distractors.opening_cash
     ids = _Ids(seed)
     episode_id = ids.new("episode")
     ledger: list[LedgerRow] = []
@@ -253,6 +264,20 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
                         "target_currency": BASE_CURRENCY, "rate": item.conversion_rate,
                     })
 
+    initial_history = {
+        "opening_bank_minor": opening_balance,
+        "obligations": [asdict(item) for item in obligations],
+    }
+    if distractors is not None:
+        initial_history["distractor_operations"] = add_clean_distractors(
+            invoices, payments,
+            base_currency=BASE_CURRENCY,
+            plan=distractors,
+            new_id=ids.new,
+            date_at=lambda offset: _timestamp(start + timedelta(days=offset)),
+            post=partial(_post, ledger, ids),
+        )
+
     counts = normalized_config["error_counts"]
     issues, changes = apply_allocation_errors(
         ledger, invoices, payments,
@@ -294,10 +319,7 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
             truth={"episode_id": episode_id, "issues": issues},
             provenance={
                 "episode_id": episode_id, "seed": seed, "config": normalized_config,
-                "initial_history": {
-                    "opening_bank_minor": opening_balance,
-                    "obligations": [asdict(item) for item in obligations],
-                },
+                "initial_history": initial_history,
                 "changes": changes,
             },
         ),
