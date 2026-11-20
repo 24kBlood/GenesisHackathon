@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Context, Decimal, localcontext
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Collection, Iterator
 from zoneinfo import ZoneInfo
 
 from genesis.domain.enums import FindingType
@@ -65,7 +65,7 @@ def _quote_date(
     return datetime.fromisoformat(timestamp).astimezone(ZoneInfo(policy["timezone"])).date().isoformat()
 
 
-def _fx_mutations(public: PublicEpisode, count: int) -> Iterator[_Mutation]:
+def _fx_mutations(public: PublicEpisode, count: int, reserved_payment_ids: Collection[str]) -> Iterator[_Mutation]:
     invoices = {invoice["invoice_id"]: invoice for invoice in public.invoices}
     quotes: dict[tuple[str, str, str], list[str]] = defaultdict(list)
     for row in public.fx:
@@ -74,7 +74,7 @@ def _fx_mutations(public: PublicEpisode, count: int) -> Iterator[_Mutation]:
     rounding = public.policy["rounding_mode"]
     for payment in sorted(public.payments, key=lambda doc: doc["payment_id"]):
         source = payment["currency"]
-        if source == public.manifest["base_currency"]:
+        if source == public.manifest["base_currency"] or payment["payment_id"] in reserved_payment_ids:
             continue
         legs = _paired_legs([row for row in public.ledger if row["payment_id"] == payment["payment_id"]])
         if legs is None:
@@ -154,19 +154,21 @@ def _cutoff_mutations(public: PublicEpisode, count: int) -> Iterator[_Mutation]:
 
 def apply_fx_cutoff_errors(
     public: PublicEpisode, counts: dict[str, int], new_id: Callable[[str], str],
+    *, reserved_payment_ids: Collection[str] = (),
 ) -> tuple[list[LedgerRow], list[TruthIssue], list[dict[str, Any]]]:
     """Return the revised ledger and its private truth and provenance entries."""
     replacements: dict[str, LedgerRow] = {}
     issues: list[TruthIssue] = []
     changes: list[dict[str, Any]] = []
     for name, mutations in (
-        (FindingType.FX_CONVERSION, _fx_mutations),
-        (FindingType.PERIOD_CUTOFF, _cutoff_mutations),
+        (FindingType.FX_CONVERSION, _fx_mutations(
+            public, counts.get(FindingType.FX_CONVERSION, 0), reserved_payment_ids,
+        )),
+        (FindingType.PERIOD_CUTOFF, _cutoff_mutations(public, counts.get(FindingType.PERIOD_CUTOFF, 0))),
     ):
-        count = counts.get(name, 0)
-        if not count:
+        if not counts.get(name, 0):
             continue
-        for mutation in mutations(public, count):
+        for mutation in mutations:
             affected = [row["row_id"] for row in mutation.rows]
             issue_id = new_id("issue")
             issues.append({

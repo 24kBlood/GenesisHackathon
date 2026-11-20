@@ -15,6 +15,7 @@ from genesis.domain.money import convert_minor
 from .allocation import apply_allocation_errors
 from .distractors import add_clean_distractors, plan_clean_distractors
 from .fx_cutoff import apply_fx_cutoff_errors
+from .interactions import apply_interaction, build_terms, normalize_scenarios
 
 
 class LedgerRow(TypedDict):
@@ -121,17 +122,15 @@ def _generation_config(config: Mapping[str, Any]) -> dict[str, Any]:
             raise ValueError("error counts must be non-negative integers")
         if count:
             normalized[str(name)] = count
-    interactions = config.get("interaction_scenarios", [])
+    interactions = normalize_scenarios(config.get("interaction_scenarios", []))
     distractors = config.get("include_distractors", False)
-    if not isinstance(interactions, list) or type(distractors) is not bool:
-        raise ValueError("invalid interaction_scenarios or include_distractors")
-    if interactions:
-        raise ValueError("interactions are not supported")
+    if type(distractors) is not bool:
+        raise ValueError("include_distractors must be a boolean")
     result = {"schema_version": SCHEMA_VERSION, "error_counts": normalized}
     if distractors:
         result["include_distractors"] = True
     if "interaction_scenarios" in config:
-        result["interaction_scenarios"] = []
+        result["interaction_scenarios"] = interactions
     return result
 
 
@@ -216,9 +215,19 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
         plan_clean_distractors(_rng(seed, "clean-distractors"))
         if normalized_config.get("include_distractors") else None
     )
+    terms = build_terms(
+        normalized_config.get("interaction_scenarios", []),
+        datetime.fromisoformat(_timestamp(end, hour=0)),
+        _rng(seed, "interaction-terms"),
+    )
+    scenario_obligations = [
+        Obligation("JPY", 1, item.amount_minor, item.issued_at, item.paid_at, item.paid_at, item.correct_rate)
+        for item in terms.values()
+    ]
+    history = [*obligations, *scenario_obligations]
     opening_balance = sum(_base_amount(
         item.total_minor, item.currency, item.conversion_rate,
-    ) for item in obligations)
+    ) for item in history)
     if distractors is not None:
         opening_balance += distractors.opening_cash
     ids = _Ids(seed)
@@ -227,8 +236,10 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
     invoices: list[Invoice] = []
     payments: list[Payment] = []
     fx: list[FxQuote] = []
+    scenario_docs: dict[str, tuple[Invoice, Payment]] = {}
     _post(ledger, ids, _timestamp(start), ids.new("entity"), opening_balance, "bank", "equity")
-    for item in obligations:
+    names = [None] * len(obligations) + list(terms)
+    for name, item in zip(names, history, strict=True):
         invoice_id = ids.new("invoice")
         entity_id = ids.new("entity")
         invoices.append({
@@ -252,6 +263,8 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
                 "currency": item.currency, "amount_minor": item.total_minor,
                 "invoice_refs": [invoice_id],
             })
+            if name is not None:
+                scenario_docs[name] = (invoices[-1], payments[-1])
             _post(
                 ledger, ids, item.paid_at, entity_id, amount, "accounts_payable", "bank",
                 invoice_id=invoice_id, payment_id=payment_id,
@@ -263,11 +276,18 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
                         "date": timestamp[:10], "source_currency": item.currency,
                         "target_currency": BASE_CURRENCY, "rate": item.conversion_rate,
                     })
+        if name is not None and (quote_date := terms[name].alternative_quote_date):
+            fx.append({
+                "date": quote_date, "source_currency": item.currency,
+                "target_currency": BASE_CURRENCY, "rate": terms[name].wrong_rate,
+            })
 
     initial_history = {
         "opening_bank_minor": opening_balance,
-        "obligations": [asdict(item) for item in obligations],
+        "obligations": [asdict(item) for item in history],
     }
+    if terms:
+        initial_history["market_quotes"] = [quote.copy() for quote in fx]
     if distractors is not None:
         initial_history["distractor_operations"] = add_clean_distractors(
             invoices, payments,
@@ -288,9 +308,6 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
         new_id=ids.new,
     )
 
-    order = _rng(seed, "publication-order")
-    for rows in (ledger, invoices, payments, fx):
-        order.shuffle(rows)
     policy = {
         "fx_date_rule": "payment_date", "timezone": "Asia/Almaty",
         "period_start": _timestamp(start, hour=0),
@@ -310,9 +327,22 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
     }
     public = PublicEpisode(manifest, policy, ledger, invoices, payments, fx)
     if counts.get(FindingType.FX_CONVERSION) or counts.get(FindingType.PERIOD_CUTOFF):
-        public.ledger, fx_cutoff_issues, fx_cutoff_changes = apply_fx_cutoff_errors(public, counts, ids.new)
+        public.ledger, fx_cutoff_issues, fx_cutoff_changes = apply_fx_cutoff_errors(
+            public, counts, ids.new,
+            reserved_payment_ids={payment["payment_id"] for _, payment in scenario_docs.values()},
+        )
         issues.extend(fx_cutoff_issues)
         changes.extend(fx_cutoff_changes)
+    for name, (invoice, payment) in scenario_docs.items():
+        scenario_issues, scenario_changes = apply_interaction(
+            public, name, invoice, payment, terms[name], ids.new,
+        )
+        issues.extend(scenario_issues)
+        changes.extend(scenario_changes)
+    manifest["record_counts"]["ledger"] = len(public.ledger)
+    order = _rng(seed, "publication-order")
+    for rows in (public.ledger, invoices, payments, fx):
+        order.shuffle(rows)
     return Episode(
         public=public,
         evaluator=EvaluatorEpisode(
