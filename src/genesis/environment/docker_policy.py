@@ -18,11 +18,7 @@ _IMAGE_ID = re.compile(r"sha256:[a-f0-9]{64}")
 _MEMORY_LIMIT = re.compile(r"[1-9][0-9]{0,8}[bkmgBKMG]?")
 _CPU_LIMIT = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)")
 _HOST_ENV_KEYS = ("PATH", "SYSTEMROOT", "WINDIR", "DOCKER_HOST", "XDG_RUNTIME_DIR", "DOCKER_CONTEXT")
-_IMAGE_INSPECT_FORMAT = (
-    '{"Id":{{json .Id}},"Config":{{if .Config}}'
-    '{"Volumes":{{json .Config.Volumes}},"Healthcheck":{{json .Config.Healthcheck}}}'
-    '{{else}}null{{end}}}'
-)
+_IMAGE_INSPECT_FORMAT = '{"Id":{{json .Id}},"Config":{{json .Config}}}'
 _IMAGE_FIELDS = _IMAGE_INSPECT_FORMAT
 _DAEMON_RESPONSE_BYTES = 512
 _IMAGE_INSPECT_BYTES = 64 * 1024
