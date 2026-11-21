@@ -34,7 +34,7 @@
 Выполните из корня клона проекта с Python 3.11. Подготовка зависимостей может использовать сеть. Проверка использует локальные файлы.
 
 ```sh
-git fetch origin draft/25-docs-and-design-note
+git fetch origin main
 git checkout --detach 47c8fb37e4fcb8fefebc5c40b9ff28e9b6f6e1ca
 python -m pip install --no-deps -r tests/requirements-schema.lock
 PYTHONPATH=src python -m genesis.cli verify --all
