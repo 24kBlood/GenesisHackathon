@@ -23,6 +23,9 @@
     },
     "rounding_mode": {
       "$ref": "common.schema.json#/$defs/rounding"
+    },
+    "recognition_date_rule": {
+      "const": "document_date"
     }
   },
   "required": [

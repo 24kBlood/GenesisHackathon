@@ -1,0 +1,1 @@
+{"base_currency":"KZT","currency_exponents":{"JPY":0,"KZT":2},"document_count":17,"episode_id":"episode-ce7be9493ab47ff2dd4555c4","period_end":"2026-11-01T00:00:00+05:00","period_start":"2026-10-01T00:00:00+05:00","record_counts":{"fx":7,"invoices":8,"ledger":41,"payments":9},"rounding_mode":"ROUND_HALF_EVEN","schema_version":"1.0.0","timezone":"Asia/Almaty"}
