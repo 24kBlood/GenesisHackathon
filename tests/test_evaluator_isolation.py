@@ -105,7 +105,7 @@ class EvaluatorIsolationTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(report.transport_error)
             return report, trace.read_bytes()
 
-    async def test_identical_closed_wire_bytes_different_private_scores(self):
+    async def test_C19_identical_closed_wire_bytes_different_private_scores(self):
         actions = [
             {"type": "get_document", "doc_id": "policy"},
             {"type": "get_document", "doc_id": "missing-document"},
@@ -144,7 +144,8 @@ class EvaluatorIsolationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(report.terminal.invalid_submission)
         self.assertEqual(report.terminal.score.reward, -1)
 
-    async def test_transport_failures_are_bounded_empty_truncations(self):
+    async def test_C17_transport_accepts_valid_frame_and_bounds_failures(self):
+        await self._check_contract_sized_unicode_submission()
         for source, want in (
             (_WAITING_WORKER, TransportCode.TIMEOUT),
             ("import sys; sys.stdin.readline()", TransportCode.EOF),
@@ -167,7 +168,7 @@ class EvaluatorIsolationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(report.terminal.score.reward, 1)
                 self.assertEqual(len(scored), 1)
 
-    async def test_transport_accepts_contract_sized_unicode_submission(self):
+    async def _check_contract_sized_unicode_submission(self):
         findings = {
             **self.fixture.findings,
             "findings": [{**self.fixture.findings["findings"][0], "explanation": "🙂" * 1000}] * 30,
@@ -266,7 +267,7 @@ class DockerPolicyTests(unittest.IsolatedAsyncioTestCase):
             "docker", "ps", "--all", "--filter", "label=genesis.policy=true", "--format", "{{.ID}}",
         ], text=True, timeout=5).splitlines()
 
-    async def test_real_container_configuration_and_lifecycle(self):
+    async def test_C18_real_container_configuration_and_lifecycle(self):
         runner = DockerPolicy(os.environ["GENESIS_POLICY_SMOKE_IMAGE"])
         deadline = monotonic() + 30
         async with runner.open(deadline) as channel:

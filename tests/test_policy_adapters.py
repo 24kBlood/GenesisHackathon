@@ -125,11 +125,12 @@ class PolicyAdaptersTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(sum(action.get("table") == "ledger" for action in actions), 1)
         self.assertEqual(paginated.matching.tp, 1)
 
-    async def test_mark_all_submits_no_more_than_thirty_valid_false_claims(self):
+    async def test_E17_mark_all_submits_no_more_than_thirty_valid_false_claims(self):
         result, _ = await self.run_public("mark_all", clean=True, extra_rows=40)
         self.assertEqual(result.total_steps, 2)
         self.assertFalse(result.invalid_submission)
         self.assertEqual((result.matching.tp, result.matching.fp, result.matching.fn), (0, 30, 0))
+        self.assertEqual((result.score.metrics.precision, result.score.metrics.recall, result.score.metrics.f1), (0, 0, 0))
         self.assertEqual(result.score.reward, -1)
 
     async def test_benchmark_runs_the_same_ordered_cases_for_every_policy(self):

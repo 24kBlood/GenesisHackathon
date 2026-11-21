@@ -90,7 +90,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertIsNone(env.terminal_result)
         self.assertEqual(first, [self.step(env, action) for action in actions])
 
-    def test_final_step_accepts_submit(self):
+    def test_C13_final_step_accepts_submit(self):
         env = self.make_env()
         for _ in range(99):
             observation, reward, terminated, truncated, _ = env.step({"type": "calculator", "expression": "1"})
@@ -100,7 +100,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(final, ({"remaining_steps": 0, "status": "submitted"}, 0.802, True, False))
         self.assertEqual(env.terminal_result.score.inspection_steps, 99)
 
-    def test_budget_exhaustion_scores_empty_and_ignores_late_submit(self):
+    def test_C14_budget_exhaustion_scores_empty_and_ignores_late_submit(self):
         env = self.make_env(config={"clean": True})
         for _ in range(99):
             env.step({"type": "unknown"})
@@ -113,7 +113,7 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(self.step(env, self.submit())[1:], (0, False, True))
         self.assertEqual(len(self.scored), 1)
 
-    def test_exact_deadline_precedes_action_and_does_not_debit(self):
+    def test_C15_exact_deadline_precedes_action_and_does_not_debit(self):
         env = self.make_env()
         self.clock.now = 60
         self.assertEqual(
