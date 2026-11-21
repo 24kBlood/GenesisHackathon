@@ -23,6 +23,7 @@ _IMAGE_INSPECT_FORMAT = (
     '{"Volumes":{{json .Config.Volumes}},"Healthcheck":{{json .Config.Healthcheck}}}'
     '{{else}}null{{end}}}'
 )
+_IMAGE_FIELDS = _IMAGE_INSPECT_FORMAT
 _DAEMON_RESPONSE_BYTES = 512
 _IMAGE_INSPECT_BYTES = 64 * 1024
 _CLEANUP_SECONDS = 5
@@ -54,21 +55,25 @@ def _create_arguments(
     name: str,
     image_id: str,
     *,
-    memory: str = "512m",
-    cpus: str = "1",
+    cpus: int | float | str = 1,
+    memory_mib: int = 512,
+    tmpfs_mib: int = 0,
+    memory: str | None = None,
     pids_limit: int = 32,
     tmpfs_tmp_mb: int | None = None,
 ) -> tuple[str, ...]:
+    resolved_memory = memory if memory is not None else f"{memory_mib}m"
+    resolved_tmpfs = tmpfs_tmp_mb if tmpfs_tmp_mb is not None else (tmpfs_mib or None)
     args: list[str] = [
         "create", "--name", name, "--label", "genesis.policy=true", "--pull", "never",
         "--interactive", "--network", "none", "--ipc", "none", "--read-only",
         "--user", "65532:65532", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
         "--no-healthcheck", "--ulimit", "nofile=256:256", "--cgroupns", "private",
-        "--pids-limit", str(pids_limit), "--memory", memory, "--memory-swap", memory,
-        "--cpus", cpus, "--log-driver", "none",
+        "--pids-limit", str(pids_limit), "--memory", resolved_memory, "--memory-swap", resolved_memory,
+        "--cpus", str(cpus), "--log-driver", "none",
     ]
-    if tmpfs_tmp_mb is not None:
-        args.extend(["--tmpfs", f"/tmp:rw,nosuid,nodev,noexec,size={tmpfs_tmp_mb}m,mode=1777"])
+    if resolved_tmpfs is not None:
+        args.extend(["--tmpfs", f"/tmp:rw,nosuid,nodev,noexec,size={resolved_tmpfs}m,mode=1777"])
     args.append(image_id)
     return tuple(args)
 
@@ -77,8 +82,8 @@ class DockerPolicy:
     """Own the lifetime of one container and expose only its attached streams.
 
     Choose a local Linux image prepared by the maintainer. The runner accepts
-    the image reference and bounded resource limits, with no policy-provided
-    host paths or arbitrary flags.
+    a local image reference and coordinator-owned resource limits, with no
+    policy-provided host paths or arbitrary flags.
     """
 
     def __init__(
@@ -86,26 +91,41 @@ class DockerPolicy:
         image: str,
         *,
         executable: str = "docker",
-        memory: str = "512m",
-        cpus: str | int | float = "1",
+        cpus: int | float | str = 1,
+        memory_mib: int = 512,
+        tmpfs_mib: int = 0,
+        memory: str | None = None,
         pids_limit: int = 32,
         tmpfs_tmp_mb: int | None = None,
     ):
         if type(image) is not str or not _IMAGE_REFERENCE.fullmatch(image):
             raise ValueError("invalid local policy image reference")
-        if type(memory) is not str or _MEMORY_LIMIT.fullmatch(memory) is None:
-            raise ValueError("invalid memory limit")
         normalized_cpus = _validated_cpus(cpus)
+        if memory is not None:
+            if type(memory) is not str or _MEMORY_LIMIT.fullmatch(memory) is None:
+                raise ValueError("invalid memory limit")
+            resolved_memory = memory
+        else:
+            if type(memory_mib) is not int or not 64 <= memory_mib <= 4096:
+                raise ValueError("invalid memory_mib limit")
+            resolved_memory = f"{memory_mib}m"
         if type(pids_limit) is not int or not 1 <= pids_limit <= 4096:
             raise ValueError("pids_limit must be an integer between 1 and 4096")
-        if tmpfs_tmp_mb is not None and (type(tmpfs_tmp_mb) is not int or not 1 <= tmpfs_tmp_mb <= 1024):
-            raise ValueError("tmpfs_tmp_mb must be None or an integer between 1 and 1024")
+        if tmpfs_tmp_mb is not None:
+            if type(tmpfs_tmp_mb) is not int or not 1 <= tmpfs_tmp_mb <= 1024:
+                raise ValueError("tmpfs_tmp_mb must be None or an integer between 1 and 1024")
+            resolved_tmpfs: int | None = tmpfs_tmp_mb
+        else:
+            max_tmpfs = min(64, memory_mib) if memory is None else 1024
+            if type(tmpfs_mib) is not int or not 0 <= tmpfs_mib <= max_tmpfs:
+                raise ValueError("invalid tmpfs_mib limit")
+            resolved_tmpfs = tmpfs_mib or None
         self._image = image
         self._executable = executable
-        self._memory = memory
+        self._memory = resolved_memory
         self._cpus = normalized_cpus
         self._pids_limit = pids_limit
-        self._tmpfs_tmp_mb = tmpfs_tmp_mb
+        self._tmpfs_tmp_mb = resolved_tmpfs
 
     async def _command(self, *args: str, attached: bool = False, output_limit: int = _DAEMON_RESPONSE_BYTES):
         try:

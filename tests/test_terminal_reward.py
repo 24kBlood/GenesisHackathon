@@ -60,7 +60,7 @@ class TerminalRewardTests(unittest.TestCase):
     def test_invalid_structure_overrides_f1(self) -> None:
         clean = score_terminal(tp=0, fp=0, fn=0, inspection_steps=3, invalid_submission=True)
         anomalous = score_terminal(tp=0, fp=0, fn=2, inspection_steps=3, invalid_submission=True)
-        self.assertEqual(clean.metrics, Metrics(0.0, 0.0, 1.0))
+        self.assertEqual(clean.metrics, Metrics(0.0, 0.0, 0.0))
         self.assertEqual(anomalous.metrics, Metrics(0.0, 0.0, 0.0))
         self.assertEqual(clean.reward, -1.0)
         self.assertEqual(anomalous.reward, -1.0)

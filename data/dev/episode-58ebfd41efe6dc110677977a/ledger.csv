@@ -1,5 +1,5 @@
 row_id,timestamp,account,debit_minor,credit_minor,currency,entity_id,invoice_id,payment_id
-row-0694e32bdb5289a8613abb77,2026-03-01T10:00:00+00:00,bank,42201,0,GBP,entity-8226a6a5dcacc2feef325dde,null,null
+row-0694e32bdb5289a8613abb77,2026-03-01T10:00:00+00:00,bank,228134,0,GBP,entity-8226a6a5dcacc2feef325dde,null,null
 row-63ccaf5d4f77186d62c0cae2,2026-03-05T10:00:00+00:00,accounts_payable,0,3400,GBP,entity-23ae7fbd6ab172c89e75d081,invoice-c976c5e56ec9d9d07a280fc4,null
 row-f54f53acbb8399c1994f2207,2026-03-31T16:00:00+00:00,expense,15000,0,GBP,entity-d1489f642d2dbefb2ffd92ab,invoice-b38b6cc48ca844918b9a6645,null
 row-8943948ee2b8539216490e75,2026-03-03T10:00:00+00:00,expense,2800,0,GBP,entity-810bfb001adf85b1bc8d2e80,invoice-88d0a3bc9f6ee6b01ed57b68,null
@@ -13,5 +13,5 @@ row-92e8a3284dbc979761e1a7b6,2026-03-04T10:00:00+00:00,accounts_payable,0,6934,G
 row-50e2acd1f81342b297ed2e9c,2026-03-31T16:00:00+00:00,accounts_payable,0,15000,GBP,entity-d1489f642d2dbefb2ffd92ab,invoice-b38b6cc48ca844918b9a6645,null
 row-72222421073586bd4dd4c311,2026-03-08T10:00:00+00:00,accounts_payable,6934,0,GBP,entity-0d90f6e07b8428369dd9c6b6,invoice-e55c86bab7c29f2eb268fe76,payment-8012de4c0ba865fd2e36f44d
 row-c8e14a8cb2e0f275db9709d0,2026-03-10T10:00:00+00:00,accounts_payable,3400,0,GBP,entity-23ae7fbd6ab172c89e75d081,invoice-c976c5e56ec9d9d07a280fc4,payment-afc56a495e33ef86a176f0a4
-row-de73515043b7ffc735361730,2026-03-01T10:00:00+00:00,equity,0,42201,GBP,entity-8226a6a5dcacc2feef325dde,null,null
+row-de73515043b7ffc735361730,2026-03-01T10:00:00+00:00,equity,0,228134,GBP,entity-8226a6a5dcacc2feef325dde,null,null
 row-de2e518313a9f1ee119a97a6,2026-03-06T10:00:00+00:00,accounts_payable,2800,0,GBP,entity-810bfb001adf85b1bc8d2e80,invoice-88d0a3bc9f6ee6b01ed57b68,payment-8d7b613c78b1784100312447

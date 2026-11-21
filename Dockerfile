@@ -23,6 +23,7 @@ COPY tests/ tests/
 COPY data/ data/
 COPY benchmarks/ benchmarks/
 COPY trajectories/ trajectories/
+COPY LICENSE NOTICE ./
 
 ENV PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 USER 65532:65532

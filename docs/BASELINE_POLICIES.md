@@ -22,9 +22,14 @@ PYTHONPATH=src python -m genesis.policies.worker simple_reconciliation
 
 Для контейнеризации встроенных публичных политик используйте [`Dockerfile.policy`](../Dockerfile.policy). Образ фиксирует базовый `python:3.11-slim` по digest, устанавливает `tzdata==2025.2`, включает только `genesis/policies`, `genesis/domain`, `genesis/environment/jsonl.py`, файлы `__init__.py`, `LICENSE` и `NOTICE`, и запускается под `USER 65532:65532`. Oracle и доверенная часть оценки в образ не входят.
 
+Закрытый прогон на публичном профиле с сохранением публичного журнала:
+
 ```sh
 docker build -f Dockerfile.policy --tag genesis-policy:local .
+PYTHONPATH=src python -m genesis.cli run-policy standard-03 --image genesis-policy:local --trace demo-public.jsonl
 ```
+
+В PowerShell задайте `$env:PYTHONPATH = 'src'` перед запуском Python. Команда выводит итоговые метрики в терминал координатора после подтверждённого удаления контейнера. Параметр `--trace` сохраняет публичные действия и наблюдения в новый файл. Для запуска той же встроенной политики внутри Python используйте `--policy simple_reconciliation` вместо `--image genesis-policy:local`.
 
 ## Локальная диагностика (80 запусков на 20 профилях)
 

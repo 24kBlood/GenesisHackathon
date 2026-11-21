@@ -12,16 +12,15 @@ RUN if [ -n "${PIP_FIND_LINKS}" ]; then \
 
 FROM docker.io/library/python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
 
-WORKDIR /policy
+WORKDIR /app
 COPY --from=dependencies /offline-deps /usr/local/lib/python3.11/site-packages/
 COPY LICENSE NOTICE ./
 COPY src/genesis/__init__.py src/genesis/__init__.py
 COPY src/genesis/domain/ src/genesis/domain/
-COPY src/genesis/environment/__init__.py src/genesis/environment/__init__.py
-COPY src/genesis/environment/jsonl.py src/genesis/environment/jsonl.py
+COPY src/genesis/environment/__init__.py src/genesis/environment/jsonl.py src/genesis/environment/
 COPY src/genesis/policies/ src/genesis/policies/
 
-ENV PYTHONPATH=/policy/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONTZPATH=""
 USER 65532:65532
 ENTRYPOINT ["python", "-m", "genesis.policies.worker"]
 CMD ["simple_reconciliation"]

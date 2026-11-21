@@ -49,9 +49,10 @@ class ReproducibilityTests(TestCase):
         diag = summary["diagnostics"]
         self.assertEqual(diag["oracle"]["f1"], 1.0)
         self.assertEqual(diag["oracle"]["precision"], 0.75)
-        self.assertGreaterEqual(diag["oracle"]["return"], diag["simple_reconciliation"]["return"])
-        self.assertGreater(diag["simple_reconciliation"]["return"], diag["random"]["return"])
-        self.assertGreater(diag["random"]["return"], diag["mark_all"]["return"])
+        ordered = [diag[name]["return"] for name in (
+            "oracle", "simple_reconciliation", "random", "mark_all",
+        )]
+        self.assertTrue(all(better > worse for better, worse in zip(ordered, ordered[1:])))
         self.assertEqual(diag["mark_all"]["return"], -1.0)
         self.assertGreater(diag["simple_reconciliation"]["f1"], 0.5)
         self.assertTrue(all(value >= 0 for value in summary["wall_time_seconds"].values()))

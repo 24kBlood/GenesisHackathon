@@ -154,6 +154,7 @@ class PublicDatasetTests(unittest.TestCase):
             if "refund_of_payment_id" in row:
                 self.assertIn(row["refund_of_payment_id"], payments)
         movements = defaultdict(int)
+        cash_movements = defaultdict(int)
         for row in public.ledger:
             if row["invoice_id"] is not None:
                 self.assertIn(row["invoice_id"], invoices)
@@ -161,7 +162,13 @@ class PublicDatasetTests(unittest.TestCase):
             if row["payment_id"] is not None:
                 self.assertIn(row["payment_id"], payments)
             movements[row["currency"], row["timestamp"]] += row["debit_minor"] - row["credit_minor"]
+            if row["account"] == "bank":
+                cash_movements[row["timestamp"]] += row["debit_minor"] - row["credit_minor"]
         self.assertEqual(set(movements.values()), {0})
+        balance = 0
+        for timestamp in sorted(cash_movements):
+            balance += cash_movements[timestamp]
+            self.assertGreaterEqual(balance, 0)
 
     def test_clean_and_single_error_books_have_publicly_verifiable_distinctions(self):
         clean, duplicate = self.entries[:2]
@@ -199,6 +206,25 @@ class PublicDatasetTests(unittest.TestCase):
             )
             truth = regenerated.evaluator.truth["issues"]
             self.assertEqual(match([finding], truth, finding["evidence_ids"]).tp, 1)
+
+    def test_allocation_matches_an_answer_derived_from_public_postings(self):
+        entries = [entry for entry in self.entries if entry.config["error_counts"] == {"payment_allocation": 1}]
+        self.assertTrue(entries)
+        for entry in entries:
+            episode = generate_episode(entry.seed, entry.config)
+            public = load_public(DATA / entry.split / episode.public.manifest["episode_id"])
+            suspense, = (row for row in public.ledger if row["account"] == "suspense")
+            payment, = (row for row in public.payments if row["payment_id"] == suspense["payment_id"])
+            invoice, = (row for row in public.invoices if row["invoice_id"] in payment["invoice_refs"])
+            settlement = [row for row in public.ledger if row["payment_id"] == payment["payment_id"]]
+            affected = [row["row_id"] for row in settlement if row["account"] in ("accounts_payable", "suspense")]
+            evidence = [invoice["doc_id"], payment["doc_id"], *(row["row_id"] for row in settlement)]
+            finding = interactions._finding(
+                "payment_allocation", suspense["debit_minor"], payment["currency"],
+                [invoice["invoice_id"], payment["payment_id"], *affected], evidence,
+            )
+            scores = match([finding], episode.evaluator.truth["issues"], evidence)
+            self.assertEqual((scores.tp, scores.fp, scores.fn), (1, 0, 0))
 
     def test_two_committed_interactions_reconcile_using_public_files(self):
         for scenario in (PARTIAL_FX_AT_CUTOFF, DUPLICATE_WITH_FX):

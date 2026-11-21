@@ -27,8 +27,13 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install --no-deps -r tests/requirements-schema.lock
       - run: docker build --tag genesis-policy-smoke:ci tests/fixtures/policy_smoke
-      - run: docker build --file Dockerfile.policy --tag genesis-policy-worker:ci .
       - name: Verify policy image with the runner environment
         run: env -i PATH="$PATH" docker image inspect --format '{{.Id}}' "$GENESIS_POLICY_SMOKE_IMAGE"
       - run: python -m unittest discover -s tests -p test_evaluator_isolation.py -v
       - run: python -m genesis.cli verify --all --require-docker
+      - name: Run the baseline policy image on a public FX case
+        run: |
+          docker build --tag genesis-policy:ci --file Dockerfile.policy .
+          report="$(python -m genesis.cli run-policy standard-03 --image genesis-policy:ci --trace "$RUNNER_TEMP/genesis-policy.jsonl")"
+          printf '%s\n' "$report"
+          python -c 'import json, sys; result = json.load(sys.stdin); assert (result["tp"], result["fp"], result["fn"]) == (1, 0, 0)' <<< "$report"

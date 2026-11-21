@@ -1,4 +1,4 @@
-"""Verify Genesis on the team's public, synthetic regression inputs and run demos."""
+"""Verify Genesis, run demos, or score a policy on a public diagnostic profile."""
 
 import argparse
 import asyncio
@@ -19,7 +19,7 @@ _REQUIRED_MODULES = {
 }
 _GROUPS = ("schemas-and-datasets", "contract-matrix", "evaluation-matrix", "trajectories-and-pairs",
            "runtime-regressions", "docker-policy-smoke")
-_MATRIX_TEST = re.compile(r"^test_([CE]\d{2})_")
+_MATRIX_TEST = re.compile(r"^test_([CE]\d{2})(?:_|$)")
 _MISSING_MODULE_RE = re.compile(r"ModuleNotFoundError:\s+No module named '([^']+)'")
 _EXC_CLASS_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*(?:Error|Exception)):")
 _SAFE_DIFF_RE = re.compile(r"^[A-Za-z0-9_.: -]+ differs at \$[A-Za-z0-9_.\[\]-]*$")
@@ -78,8 +78,9 @@ def _failed_test_error(case):
 
 
 def _test_groups(root):
-    tests = root / "tests"
-    suite = TestLoader().discover(str(tests), top_level_dir=str(tests))
+    tests = Path(root) / "tests"
+    loader = TestLoader()
+    suite = loader.discover(str(tests), top_level_dir=str(tests))
     groups = {name: [] for name in _GROUPS}
     modules = set()
     matrix_ids = Counter()
@@ -92,14 +93,14 @@ def _test_groups(root):
         method = identifier.rsplit(".", 1)[-1]
         modules.add(module)
         matrix_match = _MATRIX_TEST.match(method)
-        matrix_id = matrix_match.group(1) if matrix_match else None
-        if matrix_id is not None:
+        matrix_id = matrix_match.group(1) if matrix_match else ""
+        if matrix_id:
             matrix_ids[matrix_id] += 1
         if ".DockerPolicyTests." in identifier:
             group = "docker-policy-smoke"
-        elif matrix_id is not None and matrix_id.startswith("C"):
+        elif matrix_id.startswith("C"):
             group = "contract-matrix"
-        elif matrix_id is not None and matrix_id.startswith("E"):
+        elif matrix_id.startswith("E"):
             group = "evaluation-matrix"
         elif module in ("test_env_contract_and_isolation", "test_public_datasets"):
             group = "schemas-and-datasets"
@@ -108,6 +109,8 @@ def _test_groups(root):
         else:
             group = "runtime-regressions"
         groups[group].append(case)
+    if loader.errors:
+        raise ImportError("test discovery failed")
     expected_ids = {f"{category}{number:02}" for category in "CE" for number in range(1, 21)}
     if set(matrix_ids) != expected_ids or any(count != 1 for count in matrix_ids.values()):
         raise ValueError("expected one test for each C01–C20 and E01–E20")
@@ -153,6 +156,11 @@ def _capture_profile_runs(root, captured):
         module.local_benchmark = orig_bench
 
 
+@contextmanager
+def _null_context():
+    yield
+
+
 def _run_group(name, cases, require_docker, *, root=None, captured=None):
     started = monotonic()
     result = _Summary()
@@ -181,11 +189,6 @@ def _run_group(name, cases, require_docker, *, root=None, captured=None):
     elif skipped_ids and name == "docker-policy-smoke":
         print("  Linux Docker integration runs in the separate Policy isolation job.")
     return ok
-
-
-@contextmanager
-def _null_context():
-    yield
 
 
 def _format_profile_error(error):
@@ -248,7 +251,7 @@ def verify(root, *, require_docker=False):
     except ValueError as error:
         print(f"FAIL verification setup: ValueError ({error})")
         return 1
-    except (OSError, AssertionError) as error:
+    except (OSError, AssertionError, SyntaxError) as error:
         print(f"FAIL verification setup: {type(error).__name__} (test discovery or required groups)")
         return 1
     captured = {}
@@ -378,7 +381,7 @@ def demo(*, policy="simple_reconciliation", seed=20260304):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Verify Genesis, run demos, or score a policy on a public diagnostic profile.")
     commands = parser.add_subparsers(dest="command", required=True)
 
     verify_parser = commands.add_parser("verify", help="run local regression and diagnostic checks")
@@ -390,9 +393,23 @@ def main(argv=None):
     demo_parser.add_argument("--policy", choices=_DEMO_POLICIES, default="simple_reconciliation")
     demo_parser.add_argument("--seed", type=int, default=20260304)
 
+    runner = commands.add_parser("run-policy", help="score a closed run on one public diagnostic profile")
+    runner.add_argument("profile")
+    source = runner.add_mutually_exclusive_group(required=True)
+    source.add_argument("--policy", choices=("random", "simple_reconciliation", "mark_all"))
+    source.add_argument("--image", help="local Docker policy image")
+    runner.add_argument("--cpus", type=int, default=1)
+    runner.add_argument("--memory-mib", type=int, default=512)
+    runner.add_argument("--tmpfs-mib", type=int, default=0)
+    runner.add_argument("--trace", type=Path, help="write a new public JSONL trace")
+
     args = parser.parse_args(argv)
     if args.command == "demo":
         return demo(policy=args.policy, seed=args.seed)
+    if args.command == "run-policy":
+        from .run_policy import run_policy
+
+        return run_policy(_REPOSITORY, args)
     return verify(args.root, require_docker=args.require_docker)
 
 

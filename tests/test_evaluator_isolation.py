@@ -179,7 +179,7 @@ class EvaluatorIsolationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(report.terminal.reason, "timeout" if want is TransportCode.TIMEOUT else "transport")
                 self.assertEqual(report.terminal.submission["findings"], [])
                 self.assertEqual(report.terminal.score.inspection_steps, 0)
-                self.assertEqual(report.terminal.score.reward, 1)
+                self.assertEqual((report.terminal.score.metrics.f1, report.terminal.score.reward), (0, -1))
                 self.assertEqual(len(scored), 1)
 
     async def _check_contract_sized_unicode_submission(self):
@@ -216,17 +216,58 @@ class EvaluatorIsolationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(commands.await_args.args[1:4], ("rm", "--force", "--volumes"))
         self.assertEqual(scored, [])
 
-    async def test_missing_image_is_normal_truncation_without_worker(self):
+    async def test_missing_image_aborts_without_scoring(self):
         runner = DockerPolicy("synthetic:missing")
         env, scored = self.make_env(SimpleNamespace(process=SimpleNamespace(returncode=0)))
         command = AsyncMock(side_effect=TransportError(TransportCode.PROCESS_ERROR))
-        with patch.object(runner, "_management", command):
-            report = await run_episode(env, seed=986, config={"clean": True}, runner=runner)
+        with patch.object(runner, "_management", command), self.assertRaises(TransportError) as error:
+            await run_episode(env, seed=986, config={"clean": True}, runner=runner)
         self.assertEqual(command.await_count, 1)
-        self.assertEqual(report.transport_error, TransportCode.PROCESS_ERROR)
-        self.assertEqual(report.terminal.submission["findings"], [])
-        self.assertTrue(report.terminal.truncated)
-        self.assertEqual(len(scored), 1)
+        self.assertEqual(error.exception.code, TransportCode.PROCESS_ERROR)
+        self.assertIsNone(env.terminal_result)
+        self.assertEqual(scored, [])
+
+    async def test_completed_submission_survives_terminal_acknowledgement_failure(self):
+        for code in (TransportCode.EOF, TransportCode.TIMEOUT):
+            with self.subTest(code=code):
+                channel = SimpleNamespace(
+                    send=AsyncMock(side_effect=[None, TransportError(code)]),
+                    receive=AsyncMock(return_value={"type": "submit", "findings": self.fixture.findings}),
+                )
+
+                @asynccontextmanager
+                async def open_channel(deadline):
+                    yield channel
+
+                runner = SimpleNamespace(open=open_channel, process=SimpleNamespace(returncode=0))
+                env, scored = self.make_env(runner)
+                result = await run_episode(env, seed=986, config={"clean": False}, runner=runner)
+                self.assertIsNone(result.transport_error)
+                self.assertTrue(result.terminal.terminated)
+                self.assertEqual(result.terminal.score.reward, 1)
+                self.assertEqual(len(scored), 1)
+
+    async def test_protocol_fault_after_inspection_receives_failing_score_on_both_books(self):
+        for clean in (False, True):
+            with self.subTest(clean=clean):
+                channel = SimpleNamespace(
+                    send=AsyncMock(),
+                    receive=AsyncMock(side_effect=[
+                        {"type": "get_document", "doc_id": "policy"},
+                        TransportError(TransportCode.BAD_FRAME),
+                    ]),
+                )
+
+                @asynccontextmanager
+                async def open_channel(deadline):
+                    yield channel
+
+                runner = SimpleNamespace(open=open_channel, process=SimpleNamespace(returncode=0))
+                env, _ = self.make_env(runner)
+                result = await run_episode(env, seed=986, config={"clean": clean}, runner=runner)
+                self.assertEqual(result.transport_error, TransportCode.BAD_FRAME)
+                self.assertEqual(result.terminal.score.inspection_steps, 1)
+                self.assertEqual((result.terminal.score.metrics.f1, result.terminal.score.reward), (0, -1))
 
     async def test_jsonl_guards_reject_duplicate_keys_nonfinite_utf8_overrun_stderr_and_send_errors(self):
         cases = (
@@ -364,9 +405,15 @@ class DockerConfigurationTests(unittest.TestCase):
         self.assertEqual(custom[custom.index("--pids-limit") + 1], "128")
         self.assertEqual(custom[custom.index("--tmpfs") + 1], "/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777")
 
+        # Also verify run_policy.py's memory_mib / tmpfs_mib kwargs work seamlessly.
+        runner_mib = DockerPolicy("synthetic:local", cpus=2, memory_mib=1024, tmpfs_mib=32)
+        self.assertEqual((runner_mib._cpus, runner_mib._memory, runner_mib._tmpfs_tmp_mb), ("2", "1024m", 32))
+
         for bad_kwargs in (
             {"image": "--privileged"},
             {"image": "synthetic:local", "memory": "--privileged"},
+            {"image": "synthetic:local", "memory_mib": 32},
+            {"image": "synthetic:local", "tmpfs_mib": 65},
             {"image": "synthetic:local", "cpus": True},
             {"image": "synthetic:local", "cpus": 0},
             {"image": "synthetic:local", "pids_limit": 0},

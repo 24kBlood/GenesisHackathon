@@ -43,6 +43,8 @@ async def run_episode(
     fault = None
     try:
         async with runner.open(deadline) as channel:
+            env.begin_policy_interaction()
+            deadline = monotonic() + env.seconds_remaining
             await channel.send({"type": "reset", "observation": observation, "info": {}}, deadline)
             while True:
                 action = await channel.receive(deadline)
@@ -53,14 +55,14 @@ async def run_episode(
                     accepted += 1
                     remaining = observation["remaining_steps"]
                 try:
-                    try:
-                        await channel.send({
-                            "type": "step", "observation": observation, "reward": reward,
-                            "terminated": terminated, "truncated": truncated, "info": {},
-                        }, deadline)
-                    except TransportError as error:
-                        if not ((terminated or truncated) and error.code in (TransportCode.EOF, TransportCode.TIMEOUT)):
-                            raise
+                    await channel.send({
+                        "type": "step", "observation": observation, "reward": reward,
+                        "terminated": terminated, "truncated": truncated, "info": {},
+                    }, deadline)
+                except TransportError as error:
+                    # The worker may exit immediately after submitting or reaching the step limit.
+                    if not (terminated or truncated) or error.code not in (TransportCode.EOF, TransportCode.TIMEOUT):
+                        raise
                 finally:
                     if consumed and on_step is not None:
                         recorded_action = {"type": "invalid"} if env.last_action_failed else action
@@ -68,6 +70,8 @@ async def run_episode(
                 if terminated or truncated:
                     break
     except TransportError as error:
+        if error.code is TransportCode.PROCESS_ERROR:
+            raise
         fault = error.code
         env.truncate(reason="timeout" if fault is TransportCode.TIMEOUT else "transport")
     terminal = env.terminal_result

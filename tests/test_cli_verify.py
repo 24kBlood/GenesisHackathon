@@ -1,4 +1,4 @@
-"""Unit tests for genesis.cli verify gate, demo subcommand, and packaging."""
+"""Unit tests for genesis.cli verify gate, demo, run-policy dispatch, and packaging."""
 
 from contextlib import contextmanager, redirect_stdout
 from io import StringIO
@@ -24,6 +24,7 @@ _SYNTHETIC_MODULES = (
     "test_matrix_synthetic",
     "test_missing_dep_synthetic",
     "test_import_err_synthetic",
+    "test_broken_discovery",
 )
 
 
@@ -74,6 +75,25 @@ def _write_synthetic_repo(root: Path, *, skip_docker: bool = True, extra_non_mat
 
 
 class CliVerifyTests(unittest.TestCase):
+    def test_matrix_names_require_numeric_identifier_boundary(self):
+        self.assertEqual(cli_main._MATRIX_TEST.match("test_C18_docker")[1], "C18")
+        self.assertEqual(cli_main._MATRIX_TEST.match("test_C18")[1], "C18")
+        self.assertIsNone(cli_main._MATRIX_TEST.match("test_CSV_export"))
+        self.assertIsNone(cli_main._MATRIX_TEST.match("test_E20extra"))
+
+    def test_failed_test_discovery_reports_import_error(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            tests = root / "tests"
+            tests.mkdir()
+            (tests / "test_broken_discovery.py").write_text(
+                "import genesis_missing_test_dependency\n", encoding="utf-8",
+            )
+            with _isolated_test_modules(), redirect_stdout(StringIO()) as output:
+                self.assertEqual(cli_main.verify(root), 1)
+        self.assertIn("ModuleNotFoundError", output.getvalue())
+        self.assertIn("genesis_missing_test_dependency", output.getvalue())
+
     def test_discovery_surfaces_module_not_found_without_host_paths(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -223,6 +243,20 @@ class CliVerifyTests(unittest.TestCase):
         self.assertFalse(mocked.call_args_list[0].kwargs["require_docker"])
         self.assertFalse(mocked.call_args_list[1].kwargs["require_docker"])
         self.assertTrue(mocked.call_args_list[2].kwargs["require_docker"])
+
+    def test_main_dispatches_run_policy_subcommand(self):
+        with patch("genesis.cli.run_policy.run_policy", return_value=0) as mocked:
+            code = cli_main.main([
+                "run-policy", "standard-03", "--image", "genesis-policy:ci",
+                "--cpus", "2", "--memory-mib", "1024", "--tmpfs-mib", "64",
+            ])
+        self.assertEqual(code, 0)
+        mocked.assert_called_once()
+        root_arg, parsed_args = mocked.call_args.args
+        self.assertEqual(root_arg, cli_main._REPOSITORY)
+        self.assertEqual(parsed_args.profile, "standard-03")
+        self.assertEqual(parsed_args.image, "genesis-policy:ci")
+        self.assertEqual((parsed_args.cpus, parsed_args.memory_mib, parsed_args.tmpfs_mib), (2, 1024, 64))
 
     def test_demo_subcommand_runs_all_four_policies_end_to_end(self):
         for policy in ("simple_reconciliation", "random", "mark_all", "oracle"):

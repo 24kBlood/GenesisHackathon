@@ -3,7 +3,6 @@
 import csv
 import io
 import json
-import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -65,12 +64,13 @@ def export_episode(episode: Episode, directory: Path | str) -> None:
         staged.mkdir()
         for projection, documents in files.items():
             destination = staged / projection
-            destination.mkdir()
-            if projection == "evaluator-only":
-                os.chmod(destination, 0o700)
+            private = projection == "evaluator-only"
+            destination.mkdir(mode=0o700 if private else 0o755)
+            if private:
+                destination.chmod(0o700)
             for name, contents in documents.items():
-                file_path = destination / name
-                file_path.write_bytes(contents)
-                if projection == "evaluator-only":
-                    os.chmod(file_path, 0o600)
+                path = destination / name
+                path.write_bytes(contents)
+                if private:
+                    path.chmod(0o600)
         staged.rename(target)

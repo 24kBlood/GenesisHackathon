@@ -136,12 +136,12 @@ class LifecycleTests(unittest.TestCase):
             {"affected_ids": [f"id-{i}" for i in range(65)]},
             {"affected_ids": ["dup", "dup"]},
             {"affected_ids": ["a" * 129]},
-            {"affected_ids": ["\ud800"]},
+            {"affected_ids": [chr(0xD800)]},
             {"claimed_amount_minor": True}, {"claimed_amount_minor": 10000.0},
             {"claimed_amount_minor": -1}, {"claimed_amount_minor": 10**18 + 1},
             {"currency": "usd"}, {"evidence_ids": ["id"] * 11},
-            {"evidence_ids": ["b" * 129]}, {"evidence_ids": ["\ud800"]},
-            {"explanation": "я" * 1001}, {"explanation": "bad\ud800text"},
+            {"evidence_ids": ["b" * 129]}, {"evidence_ids": [chr(0xDFFF)]},
+            {"explanation": "я" * 1001}, {"explanation": "bad" + chr(0xD800) + "text"},
             {"extra": "private"},
         ):
             bad_findings.append({**self.fixture.findings, "findings": [{**baseline, **changes}]})
@@ -153,6 +153,7 @@ class LifecycleTests(unittest.TestCase):
                 self.assertTrue(env.terminal_result.invalid_submission)
                 self.assertIsInstance(env.terminal_result.validation_error, str)
                 self.assertTrue(env.terminal_result.validation_error)
+                self.assertEqual(env.terminal_result.score.metrics.f1, 0)
                 self.assertEqual(env.terminal_result.submission["findings"], [])
                 self.assertEqual(self.step(env, self.submit())[1:], (0, True, False))
         self.assertEqual(len(self.scored), len(bad_findings))

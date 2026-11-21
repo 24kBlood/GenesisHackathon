@@ -116,6 +116,7 @@ _USD_VALUE: dict[str, Decimal] = {
     "JPY": Decimal("0.00667"),
 }
 _FX_DATE_RULES = frozenset({"payment_date", "invoice_date"})
+_OPENING_CASH_RESERVE = 200_000
 _SERVICE_DESCRIPTIONS = (
     "Cloud compute hosting",
     "Legal advisory retainer",
@@ -445,7 +446,7 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
     obligation_total = sum(_base_amount(
         item.total_minor, item.currency, item.conversion_rate, base_currency, exponents,
     ) for item in history)
-    opening_balance = obligation_total + max(10_000, obligation_total // 2)
+    opening_balance = obligation_total + max(_OPENING_CASH_RESERVE, obligation_total // 2)
     if distractors is not None:
         opening_balance += distractors.opening_cash
     ids = _Ids(seed)

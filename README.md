@@ -77,7 +77,9 @@ PYTHONPATH=src python -m genesis.evaluation.reproducibility benchmark --profiles
 
 ## Данные и траектории
 
-- [10 train](data/train/) и [10 dev](data/dev/) содержат открытые артефакты синтетических эпизодов (от компактных 16-строчных до масштабированных книг с 220+ проводками и 100+ документами, 5 валют и 4 часовых пояса IANA). [Индексы конфигураций](data/configs/), [SHA-256](data/checksums.json) и [команды регенерации](data/README.md) включены в репозиторий. Эталон и provenance для этих наборов воспроизводятся в доверенном контуре из открытых seed. Официальные закрытые seed жюри хранятся отдельно.
+Для показа полного закрытого цикла сверки в контейнере выполните [закрытый прогон базовой политики (`run-policy`)](docs/BASELINE_POLICIES.md#запуск-и-контейнер-политики): он сохраняет публичный журнал и печатает итоговые метрики после удаления контейнера.
+
+- [10 train](data/train/) и [10 dev](data/dev/) (`v1.1.0`) содержат открытые артефакты синтетических эпизодов (от компактных 16-строчных до масштабированных книг с 220+ проводками и 100+ документами, 5 валют и 4 часовых пояса IANA). [Индексы конфигураций](data/configs/), [SHA-256](data/checksums.json) и [команды регенерации](data/README.md) включены в репозиторий. Эталон и provenance для этих наборов воспроизводятся в доверенном контуре из открытых seed. Официальные закрытые seed жюри хранятся отдельно.
 - [Записанная траектория](trajectories/trajectories.jsonl) получена реальным запуском `simple_reconciliation` на масштабированном 60-обязательном эпизоде `data/train` (`episode-ce7be9493ab47ff2dd4555c4`, `seed=20260110`, 11 шагов, постраничное чтение с курсорами, все 4 типа ошибок и оба сценария взаимодействия). [Формат и replay](docs/TRAJECTORIES.md) описывают публичные поля журнала и границу закрытой диагностики. В `tests/fixtures/contract/` лежит отдельный рукотворный пример формата.
 - [20 профилей локальной диагностики](benchmarks/local_eval_profiles.json) используются для сравнения политик и парных проверок (включая проверку инвариантности к перестановке ID для Oracle и `simple_reconciliation`). Результаты официальной проверки жюри определяются на закрытых эпизодах.
 
@@ -89,7 +91,7 @@ PYTHONPATH=src python -m genesis.evaluation.reproducibility benchmark --profiles
 | [`src/genesis/environment/`](src/genesis/environment/) | `reset`, `step`, публичные инструменты, бюджет и изоляция процесса политики. |
 | [`src/genesis/evaluation/`](src/genesis/evaluation/) | Сопоставление, метрики, награда, координатор прогона и доверенный Oracle. |
 | [`src/genesis/policies/`](src/genesis/policies/) | Случайный исследователь, базовая сверка по четырём типам ошибок и контрольная политика «пометить всё». |
-| [`src/genesis/trajectories/`](src/genesis/trajectories/) и [`src/genesis/cli/`](src/genesis/cli/) | Запись публичных наблюдений, валидация траекторий, `verify` и интерактивная команда `demo`. |
+| [`src/genesis/trajectories/`](src/genesis/trajectories/) и [`src/genesis/cli/`](src/genesis/cli/) | Запись публичных наблюдений, валидация траекторий, команды `verify`, `demo` и `run-policy`. |
 | [`schemas/`](schemas/), [`tests/`](tests/), [`pyproject.toml`](pyproject.toml), [`Dockerfile.policy`](Dockerfile.policy) | Контракты данных, проверки среды/оценщика/воспроизводимости, метаданные пакета и образ воркера политики. |
 
 Начните с [записки о дизайне](docs/DESIGN_NOTE.md), [контракта данных](docs/DATA_CONTRACT.md) и [ограничений](docs/LIMITATIONS.md). Для работы команды используйте [CONTRIBUTING.md](CONTRIBUTING.md) и [план в GitHub](https://github.com/24kBlood/GenesisHackathon/issues/33).
