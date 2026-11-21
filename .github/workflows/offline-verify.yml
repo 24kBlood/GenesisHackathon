@@ -1,6 +1,9 @@
 name: Offline verification
 
 on:
+  push:
+    branches: [main]
+  workflow_dispatch:
   pull_request:
     branches: [main, "draft/**"]
     types: [opened, synchronize, reopened, edited]

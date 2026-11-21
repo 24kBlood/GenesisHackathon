@@ -100,6 +100,8 @@ SCHEMA_VERSION = "1.0.0"
 BASE_CURRENCY = "KZT"
 EXPONENTS = {"KZT": 2, "JPY": 0}
 LOCAL_OFFSET = timezone(timedelta(hours=5))
+# At most 149,000 minor units of combined additional FX cash outflow.
+_OPENING_CASH_RESERVE = 200_000
 FINDING_TYPES = frozenset(FindingType)
 
 
@@ -129,7 +131,7 @@ def _generation_config(config: Mapping[str, Any]) -> dict[str, Any]:
     result = {"schema_version": SCHEMA_VERSION, "error_counts": normalized}
     if distractors:
         result["include_distractors"] = True
-    if "interaction_scenarios" in config:
+    if interactions:
         result["interaction_scenarios"] = interactions
     return result
 
@@ -225,7 +227,7 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
         for item in terms.values()
     ]
     history = [*obligations, *scenario_obligations]
-    opening_balance = sum(_base_amount(
+    opening_balance = _OPENING_CASH_RESERVE + sum(_base_amount(
         item.total_minor, item.currency, item.conversion_rate,
     ) for item in history)
     if distractors is not None:

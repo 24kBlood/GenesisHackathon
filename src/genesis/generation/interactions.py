@@ -84,12 +84,15 @@ def apply_interaction(
 
     def record(
         kind: FindingType, amount: int, affected: list[str], evidence: list[str],
-        before: dict, after: dict,
+        before: dict, after: dict, *, additional_evidence: list[str] | None = None,
     ) -> None:
         issue_id = new_id("issue")
+        acceptable_evidence = [evidence]
+        if additional_evidence is not None:
+            acceptable_evidence.append(additional_evidence)
         issues.append({
             "issue_id": issue_id, "type": kind.value, "expected_amount_minor": amount,
-            "currency": currency, "affected_ids": affected, "acceptable_evidence_sets": [evidence],
+            "currency": currency, "affected_ids": affected, "acceptable_evidence_sets": acceptable_evidence,
         })
         changes.append({
             "change_id": new_id("change"), "issue_id": issue_id, "affected_ids": affected.copy(),
@@ -106,7 +109,7 @@ def apply_interaction(
         ledger[ledger.index(allocation)] = allocated
         ledger.append(suspense)
         evidence = [
-            invoice["doc_id"], payment["doc_id"], "policy", payment_key, accrual["row_id"],
+            invoice["doc_id"], payment["doc_id"], "policy", payment_key,
             bank["row_id"], allocated["row_id"], suspense["row_id"],
         ]
         affected = [invoice_id, payment_id, allocated["row_id"], suspense["row_id"]]
@@ -114,6 +117,7 @@ def apply_interaction(
             FindingType.PAYMENT_ALLOCATION, shortfall, affected, evidence,
             {"rows": [allocation], "allocated_minor": clean_posted},
             {"rows": [allocated, suspense], "allocated_minor": allocated["debit_minor"]},
+            additional_evidence=[*evidence, accrual["row_id"]],
         )
         fx_debit = suspense
     else:
@@ -153,13 +157,14 @@ def apply_interaction(
     affected = [bank["row_id"], fx_debit["row_id"]]
     evidence = [payment["doc_id"], "policy", payment_key, *affected]
     after = {"rows": [amended_bank, amended_debit], "posted_minor": posted, "applied_rate": wrong_rate}
+    alternative = None
     if wrong_date is not None:
-        evidence.append(f"fx:{wrong_date}:{payment['currency']}:{currency}")
+        alternative = [*evidence, f"fx:{wrong_date}:{payment['currency']}:{currency}"]
         after["quote_date"] = wrong_date
     record(
         FindingType.FX_CONVERSION, abs(delta), affected, evidence,
         {"rows": [bank, fx_debit], "posted_minor": clean_posted,
          "applied_rate": terms.correct_rate, "quote_date": payment_day},
-        after,
+        after, additional_evidence=alternative,
     )
     return issues, changes

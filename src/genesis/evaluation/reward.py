@@ -23,8 +23,8 @@ def score_terminal(
     """Вычислить итоговую награду, равную возврату эпизода.
 
     При усечении и неверной структуре ответ пуст: tp=fp=0, fn — размер
-    эталона. Неверная структура всегда даёт -1, даже при F1=1 в чистом
-    эпизоде. Среда передаёт число фактических шагов исследования:
+    эталона. Неверная структура всегда даёт F1=0 и награду -1.
+    Среда передаёт число фактических шагов исследования:
     до 99 при submit и до 100 при усечении.
     """
     if type(inspection_steps) is not int:
@@ -36,6 +36,7 @@ def score_terminal(
     if invalid_submission:
         if tp or fp:
             raise ValueError("invalid submission must be scored as an empty answer")
+        metrics = Metrics(0.0, 0.0, 0.0)
         reward = -1.0
     else:
         reward = max(-1.0, min(1.0, 2 * metrics.f1 - 1 - 0.002 * inspection_steps))

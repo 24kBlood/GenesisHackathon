@@ -1,6 +1,6 @@
 row_id,timestamp,account,debit_minor,credit_minor,currency,entity_id,invoice_id,payment_id
 row-cefd201f2a8d2a9d478f90b9,2026-10-03T10:00:00+05:00,expense,4800,0,KZT,entity-b3acbe3a9e76c3fe1a0a0d06,invoice-606a9cecd3c5ebc2bbd6687e,null
-row-2e260006f54efa57b2dc8a2e,2026-10-01T10:00:00+05:00,equity,0,4391759,KZT,entity-4267addc10cc593b4a6ae8ac,null,null
+row-2e260006f54efa57b2dc8a2e,2026-10-01T10:00:00+05:00,equity,0,4591759,KZT,entity-4267addc10cc593b4a6ae8ac,null,null
 row-65b63ed1d0db7fcef9dfe4a3,2026-10-30T10:00:00+05:00,expense,282200,0,KZT,entity-32522d659786b201a4bd5ed6,invoice-a9d65fca3eba43cb4aff3519,null
 row-32f17b7ffb9e67873b0d892f,2026-10-13T10:00:00+05:00,bank,0,19174,KZT,entity-70699c7d73b3f2c76ed357e3,invoice-3564e274584d4ca65e569153,payment-e807bb78b19f418fc047776a
 row-0425111f109c1cde3342fe89,2026-10-25T10:00:00+05:00,accounts_payable,0,259840,KZT,entity-0b37dd3a946954b3d56bdffd,invoice-9ac1067426bafcbca19cea2e,null
@@ -17,7 +17,7 @@ row-ebcdddae2110f0d24d122838,2026-10-31T23:45:00+05:00,bank,0,298800,KZT,entity-
 row-f010e7198abb9b50f25fafea,2026-10-11T10:00:00+05:00,expense,38348,0,KZT,entity-70699c7d73b3f2c76ed357e3,invoice-3564e274584d4ca65e569153,null
 row-c1c0acf9eaab026d78d63ffd,2026-10-15T10:00:00+05:00,bank,0,3223,KZT,entity-70699c7d73b3f2c76ed357e3,invoice-10ccd46c9aba6786d51f7428,payment-e694a568fb9665780d7a30ed
 row-0aeb1e9fcba38ede238afe8d,2026-10-30T10:00:00+05:00,accounts_payable,0,282200,KZT,entity-32522d659786b201a4bd5ed6,invoice-a9d65fca3eba43cb4aff3519,null
-row-c7a85df86606fb29cecda1d4,2026-10-01T10:00:00+05:00,bank,4391759,0,KZT,entity-4267addc10cc593b4a6ae8ac,null,null
+row-c7a85df86606fb29cecda1d4,2026-10-01T10:00:00+05:00,bank,4591759,0,KZT,entity-4267addc10cc593b4a6ae8ac,null,null
 row-6187b9a979ffd35a4ba326cd,2026-10-05T10:00:00+05:00,accounts_payable,0,3200,KZT,entity-3d554d7baaa58cd2d6c94047,invoice-61f7f929e53785e05cde46c9,null
 row-3597c4756c84e0f09448195c,2026-10-25T10:00:00+05:00,expense,259840,0,KZT,entity-0b37dd3a946954b3d56bdffd,invoice-9ac1067426bafcbca19cea2e,null
 row-d2b3bf209da7cf55d577a385,2026-10-15T10:00:00+05:00,vendor_receivable,3223,0,KZT,entity-70699c7d73b3f2c76ed357e3,invoice-10ccd46c9aba6786d51f7428,payment-e694a568fb9665780d7a30ed

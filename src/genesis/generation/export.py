@@ -50,7 +50,7 @@ def export_episode(episode: Episode, directory: Path | str) -> None:
     directory must exist. An unsuccessful serialization is never published.
     """
     target = Path(directory)
-    if target.exists():
+    if target.exists() or target.is_symlink():
         raise FileExistsError(target)
     files = {
         "public": public_files(episode.public),
@@ -64,7 +64,11 @@ def export_episode(episode: Episode, directory: Path | str) -> None:
         staged.mkdir()
         for projection, documents in files.items():
             destination = staged / projection
-            destination.mkdir()
+            private = projection == "evaluator-only"
+            destination.mkdir(mode=0o700 if private else 0o755)
             for name, contents in documents.items():
-                (destination / name).write_bytes(contents)
+                path = destination / name
+                path.write_bytes(contents)
+                if private:
+                    path.chmod(0o600)
         staged.rename(target)

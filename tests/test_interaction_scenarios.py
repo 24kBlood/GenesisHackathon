@@ -116,10 +116,13 @@ class InteractionTests(TestCase):
                 self.assertEqual([item["type"] for item in findings], [item["type"] for item in truth])
                 self.assertEqual(match(findings, truth, catalog).tp, 2)
                 for finding, expected in zip(findings, truth, strict=True):
-                    self.assertCountEqual(finding["evidence_ids"], expected["acceptable_evidence_sets"][0])
-                    for removed in finding["evidence_ids"]:
-                        broken = {**finding, "evidence_ids": [item for item in finding["evidence_ids"] if item != removed]}
-                        result = match([broken], [expected], catalog - {removed})
+                    accepted = expected["acceptable_evidence_sets"]
+                    self.assertIn(set(finding["evidence_ids"]), [set(evidence) for evidence in accepted])
+                    minimal = {**finding, "evidence_ids": min(accepted, key=len)}
+                    self.assertEqual(match([minimal], [expected], catalog).tp, 1)
+                    for removed in minimal["evidence_ids"]:
+                        broken = {**minimal, "evidence_ids": [item for item in minimal["evidence_ids"] if item != removed]}
+                        result = match([broken], [expected], catalog)
                         self.assertEqual((result.tp, result.fp, result.fn), (0, 1, 1))
                 first, second = changes
                 if scenario == PARTIAL_FX_AT_CUTOFF:

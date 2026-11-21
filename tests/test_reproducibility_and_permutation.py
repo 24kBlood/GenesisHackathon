@@ -43,6 +43,10 @@ class ReproducibilityTests(TestCase):
         summary = benchmark_summary(result)
         self.assertEqual(summary["diagnostics"]["oracle"]["f1"], 1.0)
         self.assertEqual(summary["diagnostics"]["oracle"]["precision"], 0.75)
+        ordered = [summary["diagnostics"][name]["return"] for name in (
+            "oracle", "simple_reconciliation", "random", "mark_all",
+        )]
+        self.assertTrue(all(better > worse for better, worse in zip(ordered, ordered[1:])))
         self.assertTrue(all(value > 0 for value in summary["wall_time_seconds"].values()))
 
     def test_first_diff_and_changed_seed_and_posting(self):

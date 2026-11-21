@@ -1,6 +1,8 @@
 name: Bootstrap CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main, "draft/**"]
     types: [opened, synchronize, reopened, edited]

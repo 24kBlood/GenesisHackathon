@@ -5,7 +5,7 @@ import math
 import re
 from collections.abc import Callable, Mapping
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from time import monotonic
 from typing import Literal, Protocol, cast
@@ -13,8 +13,11 @@ from typing import Literal, Protocol, cast
 from genesis.domain.enums import FindingType
 from genesis.domain.models import FindingsSubmission
 from genesis.evaluation.matcher import MatchResult
+from genesis.evaluation.metrics import Metrics
 from genesis.evaluation.reward import TerminalScore
 from genesis.evaluation.terminal import TerminalEvaluation
+
+from .jsonl import FRAME_BYTES
 
 
 MAX_STEPS = 100
@@ -22,6 +25,7 @@ _TABLES = ("ledger", "invoices", "payments", "fx")
 _FINDING_TYPES = {kind.value for kind in FindingType}
 _FINDING_KEYS = {"type", "affected_ids", "claimed_amount_minor", "currency", "evidence_ids", "explanation"}
 _CURRENCY = re.compile(r"[A-Z]{3}")
+_SURROGATE = re.compile(r"[\ud800-\udfff]")
 _TOOLS = {"list_records", "get_record", "get_document", "calculator"}
 _RESULT_KEYS = {
     "list_records": "records", "get_record": "record",
@@ -121,7 +125,7 @@ class _Completion:
 
 
 def _is_id(value: object) -> bool:
-    return type(value) is str and bool(value)
+    return type(value) is str and bool(value) and _SURROGATE.search(value) is None
 
 
 def _ids(value: object, *, nonempty: bool = False, maximum: int | None = None) -> bool:
@@ -143,6 +147,7 @@ def _valid_finding(value: object) -> bool:
         and type(value["currency"]) is str and _CURRENCY.fullmatch(value["currency"]) is not None
         and _ids(value["evidence_ids"], maximum=10)
         and type(value["explanation"]) is str and len(value["explanation"]) <= 1000
+        and _SURROGATE.search(value["explanation"]) is None
     )
 
 
@@ -157,13 +162,23 @@ def _validated_submission(action: dict, episode_id: str) -> FindingsSubmission |
     findings = payload["findings"]
     if type(findings) is not list or len(findings) > 30 or not all(map(_valid_finding, findings)):
         return None
+    # Apply the wire budget to in-process policies and exported actions too.
+    try:
+        frame = json.dumps(action, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    except ValueError:
+        return None
+    if len(frame) >= FRAME_BYTES:  # The newline also counts toward the frame.
+        return None
     return cast(FindingsSubmission, deepcopy(payload))
 
 
 def _valid_tool_action(action: dict, kind: str) -> bool:
     keys = action.keys() - {"type"}
     if kind == "calculator":
-        return keys == {"expression"} and type(action["expression"]) is str
+        return (
+            keys == {"expression"} and type(action["expression"]) is str
+            and _SURROGATE.search(action["expression"]) is None
+        )
     if kind == "get_document":
         return keys == {"doc_id"} and _is_id(action["doc_id"])
     if action.get("table") not in _TABLES:
@@ -250,7 +265,7 @@ class AuditorEnv:
     ):
         if mode not in ("train", "eval"):
             raise ValueError("invalid environment mode")
-        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds < math.inf:
             raise ValueError("timeout_seconds must be positive and finite")
         self._factory = episode_factory
         self._mode = mode
@@ -273,18 +288,23 @@ class AuditorEnv:
             "policy": _project_policy(episode.policy),
             "remaining_steps": MAX_STEPS,
         })
-        started_at = self._clock()
         self._episode = episode
         self._episode_id = manifest["episode_id"]
         self._remaining = MAX_STEPS
         self._inspection_steps = 0
         self._cursors: set[tuple[str, str]] = set()
-        self._started_at = started_at
-        self._deadline = started_at + self._timeout
         self._completion = None
         self._terminal_result = None
         self._last_action_failed = False
+        self.begin_policy_interaction()
         return observation, {}
+
+    def begin_policy_interaction(self) -> None:
+        """Start the action budget once the trusted runner has opened its channel."""
+        if self._episode is None or self._remaining != MAX_STEPS or self._completion is not None:
+            raise RuntimeError("policy interaction has already started or reset is required")
+        self._started_at = self._clock()
+        self._deadline = self._started_at + self._timeout
 
     @property
     def terminal_result(self) -> TerminalResult | None:
@@ -302,6 +322,8 @@ class AuditorEnv:
                 matching, score = evaluation.matching, evaluation.score
             else:
                 matching, score = None, evaluation
+            if completion.reason in ("timeout", "transport"):
+                score = replace(score, metrics=Metrics(0.0, 0.0, 0.0), reward=-1.0)
             self._terminal_result = TerminalResult(
                 submission=completion.submission,
                 score=score,
@@ -342,6 +364,7 @@ class AuditorEnv:
             # A late action receives flags and status only. Reward was emitted once.
             return self._terminal_reply(0.0)
         if self._clock() >= self._deadline:
+            self._last_action_failed = False
             return self._finish(None, terminated=False, reason="timeout")
 
         self._remaining -= 1

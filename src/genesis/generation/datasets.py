@@ -13,8 +13,8 @@ from .export import _json_line, public_files
 
 SPLITS = ("train", "dev")
 SPLIT_SIZE = 10
-DATASET_VERSION = "1.0.0"
-GENERATOR_VERSION = "1.0.0"
+DATASET_VERSION = "1.1.0"
+GENERATOR_VERSION = "1.1.0"
 _CONFIG_FIELDS = {"split", "dataset_version", "generator_version", "schema_version", "entries"}
 
 
