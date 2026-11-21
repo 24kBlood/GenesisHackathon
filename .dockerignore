@@ -1,0 +1,15 @@
+*
+!Dockerfile
+!src/
+!src/**
+!schemas/
+!schemas/**
+!tests/
+!tests/**
+!data/
+!data/**
+!benchmarks/
+!benchmarks/**
+
+**/__pycache__/
+**/*.pyc

@@ -1,0 +1,60 @@
+name: Offline verification
+
+on:
+  pull_request:
+    branches: [main, "draft/**"]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  offline-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build the pinned verification image
+        run: |
+          git rev-parse HEAD
+          docker build --tag genesis-verify:ci .
+          size="$(docker image inspect --format '{{.Size}}' genesis-verify:ci)"
+          printf 'Docker Engine image size: %s bytes\n' "$size"
+          test "$size" -gt 0
+          test "$size" -le 1000000000
+      - name: Verify with the network disabled
+        run: |
+          container="$(docker create --network none --cpus 2 --memory 4g --memory-swap 4g \
+            --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777 \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
+            genesis-verify:ci python -m genesis.cli verify --all)"
+          trap 'docker rm --force "$container" >/dev/null' EXIT
+          actual="$(docker inspect --format '{{.HostConfig.NetworkMode}} {{.HostConfig.NanoCpus}} {{.HostConfig.Memory}} {{.HostConfig.ReadonlyRootfs}} {{.Config.User}}' "$container")"
+          printf 'Runtime network, NanoCPU, memory, read-only root, UID:GID: %s\n' "$actual"
+          test "$actual" = 'none 2000000000 4294967296 true 65532:65532'
+          docker start --attach "$container"
+      - name: Verify a synthetic JSON failure produces exit status 1
+        run: |
+          set +e
+          output="$(docker run --rm --network none --cpus 2 --memory 4g --memory-swap 4g \
+            --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777 \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
+            genesis-verify:ci python -c '
+          from pathlib import Path
+          from shutil import copytree
+          from tempfile import TemporaryDirectory
+          from genesis.cli.__main__ import verify
+
+          with TemporaryDirectory() as temporary:
+              root = Path(temporary) / "synthetic"
+              copytree("/app", root)
+              (root / "benchmarks" / "local_eval_profiles.json").write_text("{", encoding="utf-8")
+              raise SystemExit(verify(root))
+          ' 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -eq 1
+          grep -Eq '^FAIL replay-and-permutation .*JSONDecodeError' <<< "$output"
