@@ -53,10 +53,14 @@ async def run_episode(
                     accepted += 1
                     remaining = observation["remaining_steps"]
                 try:
-                    await channel.send({
-                        "type": "step", "observation": observation, "reward": reward,
-                        "terminated": terminated, "truncated": truncated, "info": {},
-                    }, deadline)
+                    try:
+                        await channel.send({
+                            "type": "step", "observation": observation, "reward": reward,
+                            "terminated": terminated, "truncated": truncated, "info": {},
+                        }, deadline)
+                    except TransportError as error:
+                        if not ((terminated or truncated) and error.code in (TransportCode.EOF, TransportCode.TIMEOUT)):
+                            raise
                 finally:
                     if consumed and on_step is not None:
                         recorded_action = {"type": "invalid"} if env.last_action_failed else action

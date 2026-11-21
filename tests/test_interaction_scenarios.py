@@ -5,6 +5,7 @@ from unittest import TestCase
 from zoneinfo import ZoneInfo
 
 from genesis.evaluation.matcher import match
+from genesis.evaluation.public_proofs import verify_public_proofs
 from genesis.generation import generate_episode
 from genesis.generation.interactions import DUPLICATE_WITH_FX, PARTIAL_FX_AT_CUTOFF
 
@@ -108,6 +109,7 @@ class InteractionTests(TestCase):
         for scenario in (PARTIAL_FX_AT_CUTOFF, DUPLICATE_WITH_FX):
             with self.subTest(scenario=scenario):
                 episode = generate_episode(413, _config([scenario]))
+                verify_public_proofs(episode)
                 findings, catalog = self._reconcile_public(episode.public, scenario)
                 truth = episode.evaluator.truth["issues"]
                 changes = episode.evaluator.provenance["changes"]
@@ -116,9 +118,16 @@ class InteractionTests(TestCase):
                 self.assertEqual([item["type"] for item in findings], [item["type"] for item in truth])
                 self.assertEqual(match(findings, truth, catalog).tp, 2)
                 for finding, expected in zip(findings, truth, strict=True):
-                    self.assertCountEqual(finding["evidence_ids"], expected["acceptable_evidence_sets"][0])
-                    for removed in finding["evidence_ids"]:
-                        broken = {**finding, "evidence_ids": [item for item in finding["evidence_ids"] if item != removed]}
+                    minimal = expected["acceptable_evidence_sets"][0]
+                    extended = expected["acceptable_evidence_sets"][-1]
+                    self.assertCountEqual(finding["evidence_ids"], extended)
+                    minimal_finding = {**finding, "evidence_ids": list(minimal)}
+                    self.assertEqual(match([minimal_finding], [expected], catalog).tp, 1)
+                    if scenario == PARTIAL_FX_AT_CUTOFF:
+                        self.assertEqual(len(expected["acceptable_evidence_sets"]), 2)
+                        self.assertLess(len(minimal), len(extended))
+                    for removed in minimal:
+                        broken = {**minimal_finding, "evidence_ids": [item for item in minimal if item != removed]}
                         result = match([broken], [expected], catalog - {removed})
                         self.assertEqual((result.tp, result.fp, result.fn), (0, 1, 1))
                 first, second = changes

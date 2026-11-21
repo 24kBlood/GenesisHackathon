@@ -36,8 +36,17 @@ class ReproducibilityReport:
     total: int
 
 
+def _unique_fields(pairs: list[tuple[str, object]]) -> dict:
+    fields: dict = {}
+    for key, value in pairs:
+        if key in fields:
+            raise ValueError(f"duplicate diagnostic profile field: {key}")
+        fields[key] = value
+    return fields
+
+
 def load_profiles(path: Path | str) -> tuple[BenchmarkEpisode, ...]:
-    value = json.loads(Path(path).read_text(encoding="utf-8"))
+    value = json.loads(Path(path).read_text(encoding="utf-8"), object_pairs_hook=_unique_fields)
     required = {"profile_version", "generator_version", "schema_version", "policy_seed", "permutation_seed", "profiles"}
     if type(value) is not dict or set(value) != required:
         raise ValueError("invalid diagnostic profile index")
@@ -226,6 +235,21 @@ async def _verify(profiles) -> ReproducibilityReport:
             if original_score.score.metrics.f1 != 1.0:
                 raise ValueError("oracle did not reach full F1")
             require_replay_equal(profile.name, "oracle scores", _diagnostics(original_score), _diagnostics(moved_score))
+            _, recon_original = await _capture(
+                profile, LocalPolicyRunner(lambda: make_policy("simple_reconciliation")), lambda *_: first,
+            )
+            _, recon_moved = await _capture(
+                profile, LocalPolicyRunner(lambda: make_policy("simple_reconciliation")), lambda *_: moved,
+            )
+            require_replay_equal(
+                profile.name, "mapped reconciliation answer",
+                _normalized_submission(recon_original.submission),
+                _normalized_submission(rewrite_ids(recon_moved.submission, inverse)),
+            )
+            require_replay_equal(
+                profile.name, "reconciliation scores",
+                _diagnostics(recon_original), _diagnostics(recon_moved),
+            )
         except ValueError as error:
             raise ValueError(f"{profile.name}: pair: {error}") from None
     return ReproducibilityReport(len(profiles), len(profiles), len(profiles))
@@ -236,15 +260,24 @@ def verify_reproducibility(profile_path: Path | str) -> ReproducibilityReport:
 
 
 async def local_benchmark(profile_path: Path | str) -> BenchmarkResult:
+    profiles = load_profiles(profile_path)
+    episodes_by_key = {
+        (profile.seed, _canonical(profile.config)): generate_episode(profile.seed, profile.config)
+        for profile in profiles
+    }
+
+    def cached_episode(seed, config):
+        return episodes_by_key[seed, _canonical(config)]
+
     def runner(name):
         return lambda _: LocalPolicyRunner(lambda: make_policy(name, seed=POLICY_SEED))
 
     def oracle_runner(profile):
-        episode = generate_episode(profile.seed, profile.config)
+        episode = episodes_by_key[profile.seed, _canonical(profile.config)]
         return LocalPolicyRunner(lambda: _oracle(episode))
 
     return await run_benchmark(
-        lambda: _env(clock=perf_counter), load_profiles(profile_path),
+        lambda: _env(cached_episode, clock=perf_counter), profiles,
         {**{name: runner(name) for name in PUBLIC_POLICIES}, "oracle": oracle_runner},
     )
 

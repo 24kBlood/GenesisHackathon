@@ -57,13 +57,14 @@ def _candidates(
     by_invoice: dict[str, list[_Candidate]] = defaultdict(list)
     for payment in payments:
         amount = payment["amount_minor"]
+        refs = payment["invoice_refs"] or []
         if (
             payment["currency"] != base_currency
-            or len(payment["invoice_refs"]) != 1
+            or len(refs) != 1
             or amount <= 0
         ):
             continue
-        invoice_id, = payment["invoice_refs"]
+        invoice_id, = refs
         invoice = invoices_by_id.get(invoice_id)
         if (
             invoice is None or invoice["currency"] != base_currency
@@ -140,10 +141,11 @@ def apply_allocation_errors(
         original = [candidate.expense, candidate.payable]
         copied = [{**row, "row_id": new_id("row")} for row in original]
         additions.extend(copied)
-        evidence = [candidate.invoice["doc_id"], *(row["row_id"] for row in original + copied)]
+        row_ids = [row["row_id"] for row in original + copied]
+        evidence = [candidate.invoice["doc_id"], *row_ids]
         amount = candidate.invoice["total_minor"]
         record(
-            FindingType.DUPLICATE_INVOICE, amount, [candidate.invoice["invoice_id"], *evidence],
+            FindingType.DUPLICATE_INVOICE, amount, [candidate.invoice["invoice_id"], *row_ids],
             evidence,
             {"rows": original, "posted_minor": amount},
             {"rows": original + copied, "posted_minor": 2 * amount},
@@ -167,13 +169,14 @@ def apply_allocation_errors(
         else:
             replacements[row["row_id"]] = suspense
             after_rows = [suspense]
+        after_row_ids = [item["row_id"] for item in after_rows]
         evidence = [
             candidate.invoice["doc_id"], candidate.payment["doc_id"],
-            candidate.bank["row_id"], row["row_id"], suspense_id,
+            candidate.bank["row_id"], *after_row_ids,
         ]
         record(
             FindingType.PAYMENT_ALLOCATION, shortfall,
-            [candidate.invoice["invoice_id"], candidate.payment["payment_id"], *evidence],
+            [candidate.invoice["invoice_id"], candidate.payment["payment_id"], *after_row_ids],
             evidence,
             {"rows": [row], "posted_minor": amount},
             {"rows": after_rows, "posted_minor": amount - shortfall,

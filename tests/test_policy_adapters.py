@@ -21,8 +21,10 @@ from genesis.environment.tools import PublicTools
 from genesis.evaluation.benchmark import BenchmarkEpisode, LocalPolicyRunner, run_benchmark
 from genesis.evaluation.judge import run_episode
 from genesis.evaluation.oracle import OraclePolicy
+from genesis.evaluation.permutation import TABLES
+from genesis.generation.company import SCHEMA_VERSION, generate_episode
 from genesis.policies import make_policy
-from genesis.policies.worker import run as run_worker
+from genesis.policies.worker import main as worker_main, run as run_worker
 
 
 _SEED = 17
@@ -213,6 +215,123 @@ class PolicyAdaptersTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaisesRegex(ValueError, "invalid policy frame"):
                     run_worker(make_policy("mark_all"), io.BytesIO(raw), outgoing)
                 self.assertEqual(outgoing.getvalue(), b"")
+
+    async def test_simple_reconciliation_handles_invoice_date_fx_rule(self):
+        episode = generate_episode(20260401, {
+            "schema_version": SCHEMA_VERSION,
+            "error_counts": {"fx_conversion": 1},
+            "fx_date_rule": "invoice_date",
+        })
+        public = episode.public
+        env = AuditorEnv(
+            lambda _s, _c: build_episode(
+                task="Audit invoice_date FX episode",
+                manifest=public.manifest,
+                policy=public.policy,
+                tables={name: getattr(public, name) for name in TABLES},
+                truth=episode.evaluator.truth,
+            ),
+            mode="eval",
+        )
+        runner = LocalPolicyRunner(lambda: make_policy("simple_reconciliation"))
+        outcome = await run_episode(env, seed=20260401, config={}, runner=runner)
+        self.assertIsNone(outcome.transport_error)
+        self.assertEqual((outcome.terminal.matching.tp, outcome.terminal.matching.fp, outcome.terminal.matching.fn), (1, 0, 0))
+        finding, = outcome.terminal.submission["findings"]
+        self.assertEqual(finding["type"], "fx_conversion")
+        invoice_doc_ids = {row["doc_id"] for row in public.invoices}
+        self.assertTrue(set(finding["evidence_ids"]) & invoice_doc_ids)
+
+    async def test_simple_reconciliation_solves_all_four_types_interactions_distractors_and_pagination(self):
+        cases = (
+            ("clean_distractors", 20260101, {"schema_version": SCHEMA_VERSION, "error_counts": {}, "include_distractors": True}, 0),
+            ("duplicate_invoice", 20260102, {"schema_version": SCHEMA_VERSION, "error_counts": {"duplicate_invoice": 1}}, 1),
+            ("payment_allocation", 20260103, {"schema_version": SCHEMA_VERSION, "error_counts": {"payment_allocation": 1}}, 1),
+            ("period_cutoff", 20260105, {"schema_version": SCHEMA_VERSION, "error_counts": {"period_cutoff": 1}}, 1),
+            ("partial_fx_cutoff", 20260106, {"schema_version": SCHEMA_VERSION, "error_counts": {}, "interaction_scenarios": ["partial_fx_payment_at_cutoff"]}, 2),
+            ("duplicate_with_fx", 20260107, {"schema_version": SCHEMA_VERSION, "error_counts": {}, "interaction_scenarios": ["duplicate_invoice_with_fx"]}, 2),
+            ("scaled_multi_page_all_four", 20260110, {
+                "schema_version": SCHEMA_VERSION,
+                "base_currency": "USD",
+                "foreign_currency": "JPY",
+                "timezone": "UTC",
+                "obligation_count": 60,
+                "include_distractors": True,
+                "error_counts": {
+                    "duplicate_invoice": 1,
+                    "payment_allocation": 1,
+                    "fx_conversion": 1,
+                    "period_cutoff": 1,
+                },
+                "interaction_scenarios": ["partial_fx_payment_at_cutoff", "duplicate_invoice_with_fx"],
+            }, 8),
+        )
+        for label, seed, config, expected_tp in cases:
+            with self.subTest(case=label):
+                episode = generate_episode(seed, config)
+                public = episode.public
+                env = AuditorEnv(
+                    lambda _s, _c, pub=public, ep=episode: build_episode(
+                        task="Audit public records",
+                        manifest=pub.manifest,
+                        policy=pub.policy,
+                        tables={name: getattr(pub, name) for name in TABLES},
+                        truth=ep.evaluator.truth,
+                    ),
+                    mode="eval",
+                )
+                runner = LocalPolicyRunner(lambda: make_policy("simple_reconciliation"))
+                outcome = await run_episode(env, seed=seed, config=config, runner=runner)
+                self.assertIsNone(outcome.transport_error)
+                for action in runner.actions:
+                    self.fixture.validators["action"].validate(action)
+                m = outcome.terminal.matching
+                self.assertEqual((m.tp, m.fp, m.fn), (expected_tp, 0, 0))
+                self.assertEqual(outcome.terminal.score.metrics.f1, 1.0)
+                if label == "scaled_multi_page_all_four":
+                    self.assertGreater(sum(a.get("table") == "ledger" for a in runner.actions), 1)
+                    self.assertGreater(outcome.terminal.score.reward, 0.95)
+
+    def test_worker_cli_exit_codes_and_error_handling(self):
+        reset_frame = (json.dumps({
+            "type": "reset",
+            "observation": {
+                "task": "Audit",
+                "manifest": self.fixture.manifest,
+                "policy": self.fixture.policy,
+                "remaining_steps": 100,
+            },
+            "info": {},
+        }) + "\n").encode("utf-8")
+        terminal_frame = (json.dumps({
+            "type": "step",
+            "observation": {"remaining_steps": 99, "status": "submitted"},
+            "reward": 0.0,
+            "terminated": True,
+            "truncated": False,
+            "info": {},
+        }) + "\n").encode("utf-8")
+        # Valid JSONL session exits 0 and emits a valid action frame.
+        stdin_ok = io.TextIOWrapper(io.BytesIO(reset_frame + terminal_frame))
+        stdout_buf = io.BytesIO()
+        stdout_ok = io.TextIOWrapper(stdout_buf)
+        saved_in, saved_out = sys.stdin, sys.stdout
+        try:
+            sys.stdin, sys.stdout = stdin_ok, stdout_ok
+            self.assertEqual(worker_main(["random", "--seed", "7"]), 0)
+        finally:
+            sys.stdin, sys.stdout = saved_in, saved_out
+        emitted = json.loads(stdout_buf.getvalue().decode("utf-8"))
+        self.fixture.validators["action"].validate(emitted)
+
+        # Malformed JSON frame exits 2 cleanly without traceback.
+        stdin_bad = io.TextIOWrapper(io.BytesIO(b"{not-json}\n"))
+        stdout_bad = io.TextIOWrapper(io.BytesIO())
+        try:
+            sys.stdin, sys.stdout = stdin_bad, stdout_bad
+            self.assertEqual(worker_main(["simple_reconciliation"]), 2)
+        finally:
+            sys.stdin, sys.stdout = saved_in, saved_out
 
 
 if __name__ == "__main__":

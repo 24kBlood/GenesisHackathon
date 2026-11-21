@@ -2,13 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.genesis.invalid/v1/config.schema.json",
   "title": "Generation configuration",
+  "description": "Normalized v1 episode generation configuration. Optional fields default to the compact v1 baseline profile when omitted.",
   "type": "object",
   "properties": {
     "schema_version": {
-      "$ref": "common.schema.json#/$defs/version"
+      "$ref": "common.schema.json#/$defs/version",
+      "description": "Data contract schema version."
     },
     "error_counts": {
       "type": "object",
+      "description": "Independent injected error counts per canonical finding type.",
       "properties": {
         "duplicate_invoice": {
           "type": "integer",
@@ -32,13 +35,46 @@
     },
     "interaction_scenarios": {
       "type": "array",
+      "description": "Additive interacting multi-error scenarios.",
       "items": {
-        "$ref": "common.schema.json#/$defs/id"
+        "type": "string",
+        "enum": [
+          "partial_fx_payment_at_cutoff",
+          "duplicate_invoice_with_fx"
+        ]
       },
       "uniqueItems": true
     },
     "include_distractors": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Whether to include legitimate split payments, overpayment refunds, and same-vendor equal-amount obligations."
+    },
+    "obligation_count": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 500,
+      "description": "Number of base obligations before distractors and interaction scenarios (defaults to 4)."
+    },
+    "base_currency": {
+      "$ref": "common.schema.json#/$defs/currency",
+      "description": "Company reporting/ledger currency (defaults to KZT)."
+    },
+    "foreign_currency": {
+      "$ref": "common.schema.json#/$defs/currency",
+      "description": "Primary foreign invoice/payment currency (defaults to JPY)."
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1,
+      "description": "IANA timezone name for period boundaries and FX date resolution (defaults to Asia/Almaty)."
+    },
+    "fx_date_rule": {
+      "type": "string",
+      "enum": [
+        "payment_date",
+        "invoice_date"
+      ],
+      "description": "Accounting policy rule for selecting the FX quote date (defaults to payment_date)."
     }
   },
   "required": [

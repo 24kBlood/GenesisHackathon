@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from random import Random
 from typing import TYPE_CHECKING, Callable
 from zoneinfo import ZoneInfo
@@ -41,17 +41,24 @@ def normalize_scenarios(requested: object) -> list[str]:
     return [name for name in _SCENARIOS if name in requested]
 
 
-def build_terms(scenarios: list[str], end: datetime, rng: Random) -> dict[str, InteractionTerms]:
+def build_terms(
+    scenarios: list[str], end: datetime, rng: Random,
+    *,
+    pair_rates: tuple[tuple[str, str], tuple[str, str]] = (("3.40", "3.60"), ("3.20", "3.25")),
+) -> dict[str, InteractionTerms]:
     result = {}
+    tz = end.tzinfo
+    end_utc = end.astimezone(timezone.utc)
+    (partial_rate, partial_wrong), (dup_rate, dup_wrong) = pair_rates
     for name in scenarios:
         if name == PARTIAL_FX_AT_CUTOFF:
-            issued = end - timedelta(days=1, hours=14)
-            paid = end - timedelta(minutes=15)
-            rate, wrong_rate, wrong_date = "3.40", "3.60", end.date().isoformat()
+            issued = (end_utc - timedelta(days=1, hours=14)).astimezone(tz)
+            paid = (end_utc - timedelta(minutes=15)).astimezone(tz)
+            rate, wrong_rate, wrong_date = partial_rate, partial_wrong, end.date().isoformat()
         else:
-            issued = end - timedelta(days=6, hours=14)
-            paid = end - timedelta(days=3, hours=12)
-            rate, wrong_rate, wrong_date = "3.20", "3.25", None
+            issued = (end_utc - timedelta(days=6, hours=14)).astimezone(tz)
+            paid = (end_utc - timedelta(days=3, hours=12)).astimezone(tz)
+            rate, wrong_rate, wrong_date = dup_rate, dup_wrong, None
         result[name] = InteractionTerms(
             issued.isoformat(), paid.isoformat(), rng.randint(400, 1400), rate, wrong_rate, wrong_date,
         )
@@ -83,21 +90,23 @@ def apply_interaction(
     changes: list[dict] = []
 
     def record(
-        kind: FindingType, amount: int, affected: list[str], evidence: list[str],
+        kind: FindingType, amount: int, affected: list[str], evidence_sets: list[list[str]],
         before: dict, after: dict,
     ) -> None:
         issue_id = new_id("issue")
+        affected_ids = list(dict.fromkeys(affected))
         issues.append({
             "issue_id": issue_id, "type": kind.value, "expected_amount_minor": amount,
-            "currency": currency, "affected_ids": affected, "acceptable_evidence_sets": [evidence],
+            "currency": currency, "affected_ids": affected_ids,
+            "acceptable_evidence_sets": [list(dict.fromkeys(items)) for items in evidence_sets],
         })
         changes.append({
-            "change_id": new_id("change"), "issue_id": issue_id, "affected_ids": affected.copy(),
+            "change_id": new_id("change"), "issue_id": issue_id, "affected_ids": affected_ids.copy(),
             "before": before, "after": after,
         })
 
     if name == PARTIAL_FX_AT_CUTOFF:
-        shortfall = clean_posted // 4
+        shortfall = max(1, clean_posted // 4)
         allocated = {**allocation, "debit_minor": clean_posted - shortfall}
         suspense = {
             **allocation, "row_id": new_id("row"), "account": "suspense",
@@ -105,13 +114,17 @@ def apply_interaction(
         }
         ledger[ledger.index(allocation)] = allocated
         ledger.append(suspense)
-        evidence = [
+        minimal_evidence = [
+            invoice["doc_id"], payment["doc_id"], "policy", payment_key,
+            bank["row_id"], allocated["row_id"], suspense["row_id"],
+        ]
+        extended_evidence = [
             invoice["doc_id"], payment["doc_id"], "policy", payment_key, accrual["row_id"],
             bank["row_id"], allocated["row_id"], suspense["row_id"],
         ]
         affected = [invoice_id, payment_id, allocated["row_id"], suspense["row_id"]]
         record(
-            FindingType.PAYMENT_ALLOCATION, shortfall, affected, evidence,
+            FindingType.PAYMENT_ALLOCATION, shortfall, affected, [minimal_evidence, extended_evidence],
             {"rows": [allocation], "allocated_minor": clean_posted},
             {"rows": [allocated, suspense], "allocated_minor": allocated["debit_minor"]},
         )
@@ -126,7 +139,7 @@ def apply_interaction(
         row_ids = [row["row_id"] for row in all_rows]
         evidence = [invoice["doc_id"], "policy", accrual_key, *row_ids]
         record(
-            FindingType.DUPLICATE_INVOICE, expense["debit_minor"], [invoice_id, *row_ids], evidence,
+            FindingType.DUPLICATE_INVOICE, expense["debit_minor"], [invoice_id, *row_ids], [evidence],
             {"rows": original_rows, "recognized_minor": expense["debit_minor"]},
             {"rows": all_rows, "recognized_minor": 2 * expense["debit_minor"]},
         )
@@ -151,13 +164,14 @@ def apply_interaction(
     ledger[ledger.index(bank)] = amended_bank
     ledger[ledger.index(fx_debit)] = amended_debit
     affected = [bank["row_id"], fx_debit["row_id"]]
-    evidence = [payment["doc_id"], "policy", payment_key, *affected]
+    minimal_fx_evidence = [payment["doc_id"], "policy", payment_key, *affected]
+    fx_evidence_sets = [minimal_fx_evidence]
     after = {"rows": [amended_bank, amended_debit], "posted_minor": posted, "applied_rate": wrong_rate}
     if wrong_date is not None:
-        evidence.append(f"fx:{wrong_date}:{payment['currency']}:{currency}")
+        fx_evidence_sets.append([*minimal_fx_evidence, f"fx:{wrong_date}:{payment['currency']}:{currency}"])
         after["quote_date"] = wrong_date
     record(
-        FindingType.FX_CONVERSION, abs(delta), affected, evidence,
+        FindingType.FX_CONVERSION, abs(delta), affected, fx_evidence_sets,
         {"rows": [bank, fx_debit], "posted_minor": clean_posted,
          "applied_rate": terms.correct_rate, "quote_date": payment_day},
         after,

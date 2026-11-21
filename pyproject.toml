@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "genesis-fintech-env"
+version = "1.0.0"
+description = "Offline synthetic financial audit RL environment, generator, and evaluator for Genesis FinTech."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "tzdata>=2025.2",
+]
+
+[project.optional-dependencies]
+verify = [
+    "jsonschema==4.25.1",
+    "rfc3339-validator==0.1.4",
+    "tzdata==2025.2",
+]
+dev = [
+    "jsonschema==4.25.1",
+    "rfc3339-validator==0.1.4",
+    "tzdata==2025.2",
+]
+
+[project.scripts]
+genesis = "genesis.cli.__main__:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["genesis*"]

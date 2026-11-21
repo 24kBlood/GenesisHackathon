@@ -2,11 +2,9 @@
 
 import tempfile
 import unittest
+from itertools import count
 from pathlib import Path
 from random import Random
-
-from jsonschema import Draft202012Validator
-from referencing import Registry, Resource
 
 import test_env_contract_and_isolation as contract
 from genesis.evaluation.matcher import match
@@ -65,6 +63,11 @@ class AllocationTests(unittest.TestCase):
         self.assertEqual(issue["type"], "duplicate_invoice")
         self.assertEqual(issue["currency"], invoice["currency"])
         self.assertEqual(issue["expected_amount_minor"], amount)
+        self.assertEqual(
+            set(issue["affected_ids"]),
+            {invoice["invoice_id"], *(row["row_id"] for row in accruals(mutated.public))},
+        )
+        self.assertNotIn(invoice["doc_id"], issue["affected_ids"])
         self.assertEqual(len(accruals(clean.public)), 2)
         self.assertCountEqual(
             [(row["account"], row["debit_minor"], row["credit_minor"])
@@ -98,6 +101,14 @@ class AllocationTests(unittest.TestCase):
                 self.assertEqual(issue["type"], "payment_allocation")
                 self.assertEqual(issue["currency"], payment["currency"])
                 self.assertEqual(issue["expected_amount_minor"], expected - posted)
+                ap_rows = [row for row in rows if row["account"] == "accounts_payable"]
+                expected_affected = {
+                    payment["invoice_refs"][0], payment["payment_id"],
+                    suspense["row_id"], *(row["row_id"] for row in ap_rows),
+                }
+                self.assertEqual(set(issue["affected_ids"]), expected_affected)
+                self.assertNotIn(payment["doc_id"], issue["affected_ids"])
+                self.assertNotIn(banks[0]["row_id"], issue["affected_ids"])
                 self.assertEqual(change["before"]["posted_minor"], expected)
                 self.assertEqual(change["after"]["posted_minor"], posted)
                 self.assertEqual(suspense["debit_minor"], expected - posted)
@@ -148,14 +159,29 @@ class AllocationTests(unittest.TestCase):
                     )
                 self.assertEqual([row["row_id"] for row in clean.ledger], original_ids)
 
-    def test_exported_error_artifacts_validate_and_counts_reconcile(self):
-        schemas = {
-            path.name.removesuffix(".schema.json"): contract.load(path)
-            for path in (contract.ROOT / "schemas").glob("*.schema.json")
+    def test_null_invoice_refs_payment_is_safely_skipped(self):
+        clean = generate_episode(4, config()).public
+        unlinked = {
+            "doc_id": "doc-unlinked-null-ref",
+            "payment_id": "payment-unlinked-null-ref",
+            "timestamp": clean.payments[0]["timestamp"],
+            "currency": "KZT",
+            "amount_minor": 1000,
+            "invoice_refs": None,
         }
-        registry = Registry().with_resources(
-            (schema["$id"], Resource.from_contents(schema)) for schema in schemas.values()
+        ids = count()
+        issues, changes = apply_allocation_errors(
+            clean.ledger, clean.invoices, [*clean.payments, unlinked],
+            base_currency="KZT", duplicate_count=1, allocation_count=1,
+            rng=Random(1), new_id=lambda prefix: f"test-{prefix}-{next(ids)}",
         )
+        self.assertEqual(len(issues), 2)
+        self.assertEqual(len(changes), 2)
+        self.assertTrue(all(unlinked["payment_id"] not in issue["affected_ids"] for issue in issues))
+
+    def test_exported_error_artifacts_validate_and_counts_reconcile(self):
+        contract.DataContractTests.setUpClass()
+        validators = contract.DataContractTests.validators
         for seed in (0, 1):
             with self.subTest(seed=seed), tempfile.TemporaryDirectory() as temporary:
                 episode = generate_episode(seed, config(duplicate_invoice=1, payment_allocation=1))
@@ -171,8 +197,5 @@ class AllocationTests(unittest.TestCase):
                     ("truth", [contract.load(evaluator / "truth.json")]),
                     ("provenance", [contract.load(evaluator / "provenance.json")]),
                 ):
-                    validator = Draft202012Validator(
-                        schemas[schema], registry=registry, format_checker=Draft202012Validator.FORMAT_CHECKER,
-                    )
                     for artifact in artifacts:
-                        validator.validate(artifact)
+                        validators[schema].validate(artifact)

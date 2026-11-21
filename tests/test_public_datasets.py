@@ -1,14 +1,18 @@
 from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import datetime
+from decimal import Decimal
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from genesis.domain.enums import FindingType
 from genesis.evaluation.matcher import match
+from genesis.evaluation.permutation import validate_links
+from genesis.evaluation.public_proofs import verify_public_proofs
 from genesis.generation.company import PublicEpisode, generate_episode
 from genesis.generation.datasets import (
     _book_hash, check_public_dataset, export_public_dataset, load_dataset_entries,
@@ -47,8 +51,16 @@ class PublicDatasetTests(unittest.TestCase):
         self.assertEqual(len({entry.seed for entry in self.entries}), 20)
         observed_types = set()
         observed_scenarios = set()
+        observed_subtypes = set()
+        observed_cutoffs = set()
+        observed_currencies = set()
+        observed_timezones = set()
+        scaled_episodes = 0
+        non_exact_fx = 0
         for entry in self.entries:
             regenerated = generate_episode(entry.seed, entry.config)
+            validate_links(regenerated)
+            verify_public_proofs(regenerated)
             truth = regenerated.evaluator.truth
             episode_id = truth["episode_id"]
             with self.subTest(episode=episode_id):
@@ -58,6 +70,40 @@ class PublicDatasetTests(unittest.TestCase):
                 self.assert_public_contract(public)
                 self.validators["config"].validate(entry.config)
                 observed_scenarios.update(entry.config.get("interaction_scenarios", []))
+                observed_currencies.update(public.manifest["currency_exponents"].keys())
+                observed_timezones.add(public.policy["timezone"])
+                if len(public.ledger) >= 200 and public.manifest["document_count"] >= 20:
+                    scaled_episodes += 1
+                cash = 0
+                per_ts = defaultdict(int)
+                for row in public.ledger:
+                    if row["account"] == "bank":
+                        per_ts[row["timestamp"]] += row["debit_minor"] - row["credit_minor"]
+                for ts in sorted(per_ts):
+                    cash += per_ts[ts]
+                    self.assertGreaterEqual(cash, 0)
+                for change in regenerated.evaluator.provenance["changes"]:
+                    after = change["after"] or {}
+                    if "subtype" in after:
+                        observed_subtypes.add(after["subtype"])
+                    if "inside_period" in after:
+                        observed_cutoffs.add(
+                            "before_start"
+                            if datetime.fromisoformat(after["timestamp"]) < datetime.fromisoformat(public.policy["period_start"])
+                            else "after_end"
+                        )
+                quotes = {(q["date"], q["source_currency"], q["target_currency"]): q["rate"] for q in public.fx}
+                zone = ZoneInfo(public.policy["timezone"])
+                base = public.manifest["base_currency"]
+                exps = public.manifest["currency_exponents"]
+                for pay in public.payments:
+                    if pay["currency"] != base:
+                        day = datetime.fromisoformat(pay["timestamp"]).astimezone(zone).date().isoformat()
+                        rate = quotes.get((day, pay["currency"], base))
+                        if rate is not None:
+                            raw = (Decimal(pay["amount_minor"]).scaleb(-exps[pay["currency"]]) * Decimal(rate)).scaleb(exps[base])
+                            if raw != int(raw):
+                                non_exact_fx += 1
                 evidence = {
                     "policy", *(row["row_id"] for row in public.ledger),
                     *(row["doc_id"] for row in public.invoices + public.payments),
@@ -69,6 +115,12 @@ class PublicDatasetTests(unittest.TestCase):
                         self.assertLessEqual(set(accepted), evidence)
         self.assertEqual(observed_types, {kind.value for kind in FindingType})
         self.assertEqual(observed_scenarios, {PARTIAL_FX_AT_CUTOFF, DUPLICATE_WITH_FX})
+        self.assertEqual(observed_subtypes, {"missing", "partial"})
+        self.assertEqual(observed_cutoffs, {"before_start", "after_end"})
+        self.assertGreaterEqual(len(observed_currencies), 4)
+        self.assertGreaterEqual(len(observed_timezones), 3)
+        self.assertGreaterEqual(scaled_episodes, 2)
+        self.assertGreater(non_exact_fx, 0)
 
     def assert_public_contract(self, public):
         groups = {
@@ -123,7 +175,10 @@ class PublicDatasetTests(unittest.TestCase):
             if entry == clean:
                 self.assertEqual(set(postings.values()), {1})
                 self.assertTrue(any(row.get("payment_kind") == "refund" for row in public.payments))
-                ordinary = Counter(row["invoice_refs"][0] for row in public.payments if "payment_kind" not in row)
+                ordinary = Counter(
+                    row["invoice_refs"][0] for row in public.payments
+                    if "payment_kind" not in row and row["invoice_refs"]
+                )
                 self.assertTrue(any(count > 1 for count in ordinary.values()))
                 self.assertEqual(regenerated.evaluator.truth["issues"], [])
                 continue
@@ -139,7 +194,7 @@ class PublicDatasetTests(unittest.TestCase):
             self.assertEqual(invoice["currency"], public.manifest["base_currency"])
             finding = interactions._finding(
                 "duplicate_invoice", sum(expense) - invoice["total_minor"], invoice["currency"],
-                [invoice_id, invoice["doc_id"], *(row["row_id"] for row in duplicated_rows)],
+                [invoice_id, *(row["row_id"] for row in duplicated_rows)],
                 [invoice["doc_id"], *(row["row_id"] for row in duplicated_rows)],
             )
             truth = regenerated.evaluator.truth["issues"]
@@ -196,6 +251,10 @@ class PublicDatasetTests(unittest.TestCase):
                 (json.dumps({**valid, "entries": []}), "expected 10 entries"),
                 (json.dumps({**valid, "entries": [{**valid["entries"][0], "seed": original}, *valid["entries"][1:]]}),
                  "duplicate seed"),
+                (json.dumps({**valid, "entries": [
+                    {**valid["entries"][0], "config": {**valid["entries"][0]["config"], "interaction_scenarios": []}},
+                    *valid["entries"][1:],
+                ]}), "normalized configuration"),
             ):
                 with self.subTest(message=message):
                     dev.write_text(content, encoding="utf-8")

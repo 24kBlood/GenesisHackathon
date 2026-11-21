@@ -12,8 +12,22 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from genesis.environment.auditor_env import AuditorEnv, Episode, ToolCode, ToolError
-from genesis.environment.docker_policy import DockerPolicy, PolicyCleanupError, _create_arguments, _host_environment
-from genesis.environment.jsonl import FRAME_BYTES, STDERR_LINE_BYTES, JsonlProcess, TransportCode, TransportError
+from genesis.environment.docker_policy import (
+    DockerPolicy,
+    PolicyCleanupError,
+    _HOST_ENV_KEYS,
+    _IMAGE_INSPECT_FORMAT,
+    _create_arguments,
+    _host_environment,
+)
+from genesis.environment.jsonl import (
+    FRAME_BYTES,
+    STDERR_BYTES,
+    STDERR_LINE_BYTES,
+    JsonlProcess,
+    TransportCode,
+    TransportError,
+)
 from genesis.evaluation.judge import run_episode
 from genesis.evaluation.matcher import match
 from genesis.evaluation.reward import score_terminal
@@ -214,6 +228,100 @@ class EvaluatorIsolationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(report.terminal.truncated)
         self.assertEqual(len(scored), 1)
 
+    async def test_jsonl_guards_reject_duplicate_keys_nonfinite_utf8_overrun_stderr_and_send_errors(self):
+        cases = (
+            ("duplicate_keys", 'import sys; sys.stdin.readline(); print(\'{"a":1,"a":2}\')', TransportCode.BAD_FRAME),
+            ("nan", "import sys; sys.stdin.readline(); print('{\"x\":NaN}')", TransportCode.BAD_FRAME),
+            ("infinity", "import sys; sys.stdin.readline(); print('{\"x\":Infinity}')", TransportCode.BAD_FRAME),
+            ("neg_infinity", "import sys; sys.stdin.readline(); print('{\"x\":-Infinity}')", TransportCode.BAD_FRAME),
+            ("invalid_utf8", r"import sys; sys.stdin.readline(); sys.stdout.buffer.write(b'\xff\xfe\n'); sys.stdout.buffer.flush()", TransportCode.BAD_FRAME),
+            ("limit_overrun_no_nl", f"import sys; sys.stdin.readline(); sys.stdout.buffer.write(b'a' * ({FRAME_BYTES} + 10)); sys.stdout.buffer.flush()", TransportCode.FRAME_LIMIT),
+            (
+                "cumulative_stderr",
+                f"import sys; sys.stdin.readline(); [sys.stderr.write('x' * 4000 + '\\n') for _ in range({STDERR_BYTES // 4000 + 2})]; sys.stderr.flush(); sys.stdin.readline()",
+                TransportCode.STDERR_LIMIT,
+            ),
+            (
+                "lone_utf16_surrogate",
+                r'import json, sys; m = json.loads(sys.stdin.readline()); ep = m["observation"]["manifest"]["episode_id"]; '
+                r'sys.stdout.write("{\"type\":\"submit\",\"findings\":{\"episode_id\":\"" + ep + "\",\"findings\":[{\"type\":\"fx_conversion\",\"affected_ids\":[\"\\ud800\"],\"claimed_amount_minor\":1,\"currency\":\"KZT\",\"evidence_ids\":[\"policy\"],\"explanation\":\"x\"}]}}\n"); sys.stdout.flush()',
+                TransportCode.BAD_FRAME,
+            ),
+        )
+        for label, source, want in cases:
+            with self.subTest(case=label):
+                runner = LocalPolicy(source)
+                env, scored = self.make_env(runner, timeout=10)
+                report = await run_episode(env, seed=986, config={"clean": False}, runner=runner)
+                self.assertEqual(report.transport_error, want)
+                self.assertTrue(report.terminal.truncated)
+                self.assertEqual(report.terminal.reason, "transport")
+                self.assertEqual(report.terminal.score.reward, -1.0)
+                self.assertEqual(len(scored), 1)
+
+        # Verify JsonlProcess.send() error paths directly (FRAME_LIMIT, TIMEOUT, EOF).
+        runner = LocalPolicy("import sys; sys.stdin.readline()")
+        async with runner.open(monotonic() + 10) as channel:
+            with self.assertRaises(TransportError) as frame_err:
+                await channel.send({"blob": "x" * FRAME_BYTES}, monotonic() + 10)
+            self.assertEqual(frame_err.exception.code, TransportCode.FRAME_LIMIT)
+            with self.assertRaises(TransportError) as timeout_err:
+                await channel.send({"ok": True}, monotonic() - 1)
+            self.assertEqual(timeout_err.exception.code, TransportCode.TIMEOUT)
+
+        closing_runner = LocalPolicy("import os, sys; os.close(0)")
+        async with closing_runner.open(monotonic() + 10) as channel:
+            await closing_runner.process.wait()
+            with self.assertRaises(TransportError) as eof_err:
+                await channel.send({"blob": "x" * 1024}, monotonic() + 10)
+            self.assertEqual(eof_err.exception.code, TransportCode.EOF)
+
+    async def test_post_submit_eof_and_timeout_ack_race_preserve_valid_submission(self):
+        # Closing stdin before writing submit deterministically triggers EPIPE on terminal ack send.
+        source = (
+            "import json, os, sys; "
+            "m = json.loads(sys.stdin.readline()); "
+            "ep = m['observation']['manifest']['episode_id']; "
+            "os.close(0); "
+            "print(json.dumps({'type': 'submit', 'findings': {'episode_id': ep, 'findings': []}}), flush=True)"
+        )
+        runner = LocalPolicy(source)
+        env, scored = self.make_env(runner, mode="eval", timeout=10)
+        report = await run_episode(env, seed=986, config={"clean": True}, runner=runner)
+        self.assertIsNone(report.transport_error)
+        self.assertTrue(report.terminal.terminated)
+        self.assertFalse(report.terminal.truncated)
+        self.assertEqual(report.terminal.reason, "submitted")
+        self.assertEqual(report.terminal.score.reward, 1.0)
+        self.assertEqual(len(scored), 1)
+
+        # Timeout on terminal ack send after submit is accepted is also non-fatal.
+        class TimeoutAckRunner:
+            def __init__(self, findings):
+                self._findings = findings
+                self._sends = 0
+                self.process = SimpleNamespace(returncode=0)
+
+            @asynccontextmanager
+            async def open(self, deadline):
+                yield self
+
+            async def send(self, message, deadline):
+                self._sends += 1
+                if self._sends == 2:
+                    raise TransportError(TransportCode.TIMEOUT)
+
+            async def receive(self, deadline):
+                return {"type": "submit", "findings": self._findings}
+
+        ack_runner = TimeoutAckRunner(self.fixture.findings)
+        env2, _ = self.make_env(ack_runner, mode="eval", timeout=10)
+        report2 = await run_episode(env2, seed=986, config={"clean": False}, runner=ack_runner)
+        self.assertIsNone(report2.transport_error)
+        self.assertTrue(report2.terminal.terminated)
+        self.assertEqual(report2.terminal.reason, "submitted")
+        self.assertEqual(report2.terminal.score.reward, 1.0)
+
 
 class DockerConfigurationTests(unittest.TestCase):
     def test_fixed_switches_and_host_env_allowlist(self):
@@ -221,16 +329,51 @@ class DockerConfigurationTests(unittest.TestCase):
         for flag, value in (
             ("--network", "none"), ("--ipc", "none"), ("--user", "65532:65532"),
             ("--cap-drop", "ALL"), ("--security-opt", "no-new-privileges"), ("--pull", "never"),
-            ("--memory", "512m"), ("--pids-limit", "32"),
+            ("--ulimit", "nofile=256:256"), ("--cgroupns", "private"),
+            ("--memory", "512m"), ("--memory-swap", "512m"), ("--cpus", "1"), ("--pids-limit", "32"),
         ):
             self.assertEqual(flags[flags.index(flag) + 1], value)
         self.assertIn("--read-only", flags)
+        self.assertIn("--no-healthcheck", flags)
+        self.assertNotIn("--tmpfs", flags)
         self.assertTrue(set(flags).isdisjoint({
             "--env", "--env-file", "--mount", "--volume", "--privileged", "--device", "--pid", "--entrypoint",
         }))
-        self.assertLessEqual(set(_host_environment()), {"PATH", "SYSTEMROOT", "WINDIR"})
-        with self.assertRaises(ValueError):
-            DockerPolicy("--privileged")
+        with patch.dict(
+            os.environ,
+            {"PATH": "/usr/bin", "DOCKER_HOST": "unix:///run/user/1000/docker.sock",
+             "XDG_RUNTIME_DIR": "/run/user/1000", "DOCKER_CONTEXT": "desktop-linux",
+             "GH_TOKEN": "secret", "PYTHONPATH": "/secret"},
+            clear=True,
+        ):
+            host_env = _host_environment()
+        self.assertLessEqual(set(host_env), set(_HOST_ENV_KEYS))
+        self.assertEqual(host_env["DOCKER_HOST"], "unix:///run/user/1000/docker.sock")
+        self.assertEqual(host_env["XDG_RUNTIME_DIR"], "/run/user/1000")
+        self.assertEqual(host_env["DOCKER_CONTEXT"], "desktop-linux")
+        self.assertNotIn("GH_TOKEN", host_env)
+        self.assertNotIn("PYTHONPATH", host_env)
+
+        custom = _create_arguments(
+            "genesis-custom", "sha256:" + "0" * 64,
+            memory="2g", cpus="2", pids_limit=128, tmpfs_tmp_mb=64,
+        )
+        self.assertEqual(custom[custom.index("--memory") + 1], "2g")
+        self.assertEqual(custom[custom.index("--memory-swap") + 1], "2g")
+        self.assertEqual(custom[custom.index("--cpus") + 1], "2")
+        self.assertEqual(custom[custom.index("--pids-limit") + 1], "128")
+        self.assertEqual(custom[custom.index("--tmpfs") + 1], "/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777")
+
+        for bad_kwargs in (
+            {"image": "--privileged"},
+            {"image": "synthetic:local", "memory": "--privileged"},
+            {"image": "synthetic:local", "cpus": True},
+            {"image": "synthetic:local", "cpus": 0},
+            {"image": "synthetic:local", "pids_limit": 0},
+            {"image": "synthetic:local", "tmpfs_tmp_mb": 0},
+        ):
+            with self.subTest(bad_kwargs=bad_kwargs), self.assertRaises(ValueError):
+                DockerPolicy(**bad_kwargs)
 
 
 class DockerImageTests(unittest.IsolatedAsyncioTestCase):
@@ -238,26 +381,62 @@ class DockerImageTests(unittest.IsolatedAsyncioTestCase):
         runner = DockerPolicy("synthetic:local")
         image_id = "sha256:" + "a" * 64
         deadline = monotonic() + 10
-        for config in ({"Entrypoint": ["python"]}, {"Volumes": None}, {"Volumes": {}}):
-            with self.subTest(config=config):
-                inspect = AsyncMock(return_value=json.dumps([{"Id": image_id, "Config": config}]).encode("ascii"))
+        for payload in (
+            {"Id": image_id, "Config": {"Volumes": None, "Healthcheck": None}},
+            {"Id": image_id, "Config": {"Volumes": {}, "Healthcheck": {"Test": ["NONE"]}}},
+            [{"Id": image_id, "Config": {"Entrypoint": ["python"]}}],
+            [{"Id": image_id, "Config": {"Volumes": None}}],
+            [{"Id": image_id, "Config": {"Volumes": {}}}],
+        ):
+            with self.subTest(payload=payload):
+                inspect = AsyncMock(return_value=json.dumps(payload).encode("ascii"))
                 with patch.object(runner, "_management", inspect):
                     self.assertEqual(await runner._local_image_id(deadline), image_id)
-                inspect.assert_awaited_once_with(deadline, "image", "inspect", "synthetic:local", output_limit=65536)
+                inspect.assert_awaited_once_with(
+                    deadline, "image", "inspect", "--format", _IMAGE_INSPECT_FORMAT,
+                    "synthetic:local", output_limit=65536,
+                )
 
-    async def test_rejects_declared_volumes_or_unverifiable_image_config(self):
+    async def test_rejects_declared_volumes_healthcheck_or_unverifiable_image_config(self):
         runner = DockerPolicy("synthetic:local")
         image_id = "sha256:" + "a" * 64
         for image in (
             {"Id": image_id, "Config": {"Volumes": {"/data": {}}}},
+            {"Id": image_id, "Config": {"Healthcheck": {"Test": ["CMD-SHELL", "exit 0"]}}},
             {"Id": image_id, "Config": None},
             {"Id": "not-local-id", "Config": {}},
         ):
             with self.subTest(image=image):
-                inspect = AsyncMock(return_value=json.dumps([image]).encode("ascii"))
+                inspect = AsyncMock(return_value=json.dumps(image).encode("ascii"))
                 with patch.object(runner, "_management", inspect), self.assertRaises(TransportError) as failure:
                     await runner._local_image_id(monotonic() + 10)
                 self.assertEqual(failure.exception.code, TransportCode.PROCESS_ERROR)
+
+    async def test_failed_create_with_slow_rm_does_not_falsely_raise_cleanup_error(self):
+        runner = DockerPolicy("synthetic:local")
+        image_id = "sha256:" + "a" * 64
+        call_deadlines = []
+
+        async def fake_management(deadline, *args, **kwargs):
+            call_deadlines.append((args[0], deadline))
+            if args[:2] == ("image", "inspect"):
+                return json.dumps({"Id": image_id, "Config": {"Volumes": None, "Healthcheck": None}}).encode("ascii")
+            if args[0] == "create":
+                raise TransportError(TransportCode.PROCESS_ERROR)
+            if args[0] == "rm":
+                raise TransportError(TransportCode.TIMEOUT)
+            if args[0] == "ps":
+                return b""
+            raise AssertionError(f"unexpected management call: {args}")
+
+        with patch.object(runner, "_management", side_effect=fake_management):
+            with self.assertRaises(TransportError) as failure:
+                async with runner.open(monotonic() + 10):
+                    pass
+        self.assertEqual(failure.exception.code, TransportCode.PROCESS_ERROR)
+        self.assertEqual([cmd for cmd, _ in call_deadlines], ["image", "create", "rm", "ps"])
+        # _container_absent must receive its own fresh deadline (>= rm deadline).
+        self.assertGreaterEqual(call_deadlines[3][1], call_deadlines[2][1])
 
 
 @unittest.skipUnless(os.environ.get("GENESIS_POLICY_SMOKE_IMAGE"), "requires the local Docker smoke image")

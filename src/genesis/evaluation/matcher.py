@@ -1,13 +1,16 @@
 """Deterministic matching for structurally validated episode findings."""
 
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Collection, Mapping, Sequence
 
+from genesis.domain.enums import FindingType
 from genesis.domain.models import Finding, TruthIssue
 
 
 DEFAULT_TOLERANCE_MINOR = 0
+_FINDING_TYPES = frozenset(kind.value for kind in FindingType)
 
 _Claim = tuple[str, tuple[str, ...], int, str]
 _Evidence = frozenset[str]
@@ -45,22 +48,33 @@ def _canonical_ids(ids: Sequence[str]) -> tuple[str, ...]:
 
 
 def _maximum_matching(edges: Sequence[Mapping[str, int]]) -> dict[str, int]:
-    """Return issue ID -> claim group using sorted augmenting paths."""
+    """Return issue ID -> claim group using deterministic iterative augmenting paths."""
     issue_to_group: dict[str, int] = {}
-
-    def augment(group: int, visited: set[str]) -> bool:
-        for issue_id in edges[group]:
+    for start_group in range(len(edges)):
+        visited: set[str] = set()
+        stack: list[tuple[int, Iterator[str], str | None]] = [
+            (start_group, iter(edges[start_group]), None)
+        ]
+        while stack:
+            group, neighbors, _ = stack[-1]
+            try:
+                issue_id = next(neighbors)
+            except StopIteration:
+                stack.pop()
+                continue
             if issue_id in visited:
                 continue
             visited.add(issue_id)
             current = issue_to_group.get(issue_id)
-            if current is None or augment(current, visited):
+            if current is None:
                 issue_to_group[issue_id] = group
-                return True
-        return False
-
-    for group in range(len(edges)):
-        augment(group, set())
+                for index in range(len(stack) - 1, 0, -1):
+                    parent_group = stack[index - 1][0]
+                    via_issue = stack[index][2]
+                    assert via_issue is not None
+                    issue_to_group[via_issue] = parent_group
+                break
+            stack.append((current, iter(edges[current]), issue_id))
     return issue_to_group
 
 
@@ -77,6 +91,8 @@ def match(
     A missing tolerance entry means an exact amount match in that currency.
     """
     tolerances = tolerances_minor or {}
+    if any(not isinstance(kind, str) or kind not in _FINDING_TYPES for kind in tolerances):
+        raise ValueError("Tolerances must use known finding types")
     if any(type(amount) is not int or amount < 0 for amount in tolerances.values()):
         raise ValueError("Tolerances must be non-negative integers in minor units")
 
@@ -99,8 +115,14 @@ def match(
     truth_by_scope: dict[
         tuple[str, tuple[str, ...], str], list[tuple[str, int, tuple[_Evidence, ...]]]
     ] = defaultdict(list)
+    seen_truth_claims: set[_Claim] = set()
     for issue in ordered_truth:
-        scope = (issue["type"], _canonical_ids(issue["affected_ids"]), issue["currency"])
+        canonical_affected = _canonical_ids(issue["affected_ids"])
+        truth_claim = (issue["type"], canonical_affected, issue["expected_amount_minor"], issue["currency"])
+        if truth_claim in seen_truth_claims:
+            raise ValueError("Truth claims must be unique within an episode")
+        seen_truth_claims.add(truth_claim)
+        scope = (issue["type"], canonical_affected, issue["currency"])
         acceptable = tuple(frozenset(ids) for ids in issue["acceptable_evidence_sets"])
         truth_by_scope[scope].append(
             (issue["issue_id"], issue["expected_amount_minor"], acceptable)

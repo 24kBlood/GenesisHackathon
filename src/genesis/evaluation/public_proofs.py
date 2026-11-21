@@ -63,9 +63,19 @@ def _proof(kind, target, rows, invoices, payments, quotes, has_policy, public):
     payment_rows = [row for row in rows if row["payment_id"] == payment["payment_id"]]
     bank = _one(payment_rows, lambda row: row["account"] == "bank")
     if kind == "fx_conversion":
-        if not has_policy or public.policy["fx_date_rule"] != "payment_date" or len(payment_rows) < 2:
+        rule = public.policy["fx_date_rule"]
+        if not has_policy or len(payment_rows) < 2:
             raise ValueError("conversion rule or paired posting is absent")
-        expected = _converted(payment["amount_minor"], payment["currency"], target, payment["timestamp"], quotes, public)
+        if rule == "payment_date":
+            when = payment["timestamp"]
+        elif rule == "invoice_date":
+            invoice = _one(invoices, lambda row: row["invoice_id"] in (payment["invoice_refs"] or []))
+            when = invoice["issued_at"]
+        elif rule == "posting_date":
+            when = bank["timestamp"]
+        else:
+            raise ValueError("unsupported fx_date_rule")
+        expected = _converted(payment["amount_minor"], payment["currency"], target, when, quotes, public)
         return abs(expected - bank["credit_minor"])
     if kind != "payment_allocation":
         raise ValueError("unsupported proof type")

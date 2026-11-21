@@ -65,7 +65,10 @@ def _quote_date(
     return datetime.fromisoformat(timestamp).astimezone(ZoneInfo(policy["timezone"])).date().isoformat()
 
 
-def _fx_mutations(public: PublicEpisode, count: int, reserved_payment_ids: Collection[str]) -> Iterator[_Mutation]:
+def _fx_mutations(
+    public: PublicEpisode, count: int, reserved_payment_ids: Collection[str],
+    by_payment: dict[str, list[LedgerRow]],
+) -> Iterator[_Mutation]:
     invoices = {invoice["invoice_id"]: invoice for invoice in public.invoices}
     quotes: dict[tuple[str, str, str], list[str]] = defaultdict(list)
     for row in public.fx:
@@ -76,7 +79,7 @@ def _fx_mutations(public: PublicEpisode, count: int, reserved_payment_ids: Colle
         source = payment["currency"]
         if source == public.manifest["base_currency"] or payment["payment_id"] in reserved_payment_ids:
             continue
-        legs = _paired_legs([row for row in public.ledger if row["payment_id"] == payment["payment_id"]])
+        legs = _paired_legs(by_payment.get(payment["payment_id"], []))
         if legs is None:
             continue
         debit, credit = legs
@@ -114,7 +117,9 @@ def _fx_mutations(public: PublicEpisode, count: int, reserved_payment_ids: Colle
     raise ValueError("not enough independently reconcilable fx_conversion candidates")
 
 
-def _cutoff_mutations(public: PublicEpisode, count: int) -> Iterator[_Mutation]:
+def _cutoff_mutations(
+    public: PublicEpisode, count: int, accruals_by_invoice: dict[str, list[LedgerRow]],
+) -> Iterator[_Mutation]:
     policy = public.policy
     if policy.get("recognition_date_rule") != "document_date":
         raise ValueError("period_cutoff requires policy recognition_date_rule=document_date")
@@ -122,6 +127,8 @@ def _cutoff_mutations(public: PublicEpisode, count: int) -> Iterator[_Mutation]:
     start = datetime.fromisoformat(policy["period_start"]).astimezone(timezone.utc)
     end = datetime.fromisoformat(policy["period_end"]).astimezone(timezone.utc)
     paid_invoices = {ref for payment in public.payments for ref in (payment["invoice_refs"] or [])}
+    near_start: list[_Mutation] = []
+    near_end: list[_Mutation] = []
     for invoice in sorted(public.invoices, key=lambda doc: doc["invoice_id"]):
         invoice_id = invoice["invoice_id"]
         if invoice_id in paid_invoices or invoice["currency"] != public.manifest["base_currency"]:
@@ -129,27 +136,32 @@ def _cutoff_mutations(public: PublicEpisode, count: int) -> Iterator[_Mutation]:
         recognition = datetime.fromisoformat(invoice["issued_at"]).astimezone(timezone.utc)
         if not in_period(invoice["issued_at"], policy) or min(recognition - start, end - recognition) > timedelta(days=1):
             continue
-        legs = _paired_legs([
-            row for row in public.ledger if row["invoice_id"] == invoice_id and row["payment_id"] is None
-        ])
+        legs = _paired_legs(accruals_by_invoice.get(invoice_id, []))
         if legs is None:
             continue
         debit, credit = legs
         if debit["timestamp"] != invoice["issued_at"] or debit["debit_minor"] != invoice["total_minor"]:
             continue
-        outside = start - timedelta(minutes=1) if recognition - start < end - recognition else end
+        is_start = recognition - start < end - recognition
+        outside = start - timedelta(minutes=1) if is_start else end
         timestamp = outside.astimezone(zone).isoformat()
-        yield _Mutation(
+        mutation = _Mutation(
             ({**debit, "timestamp": timestamp}, {**credit, "timestamp": timestamp}),
             (invoice["doc_id"], "policy"),
             debit["debit_minor"],
             {"timestamp": debit["timestamp"], "inside_period": True},
             {"timestamp": timestamp, "inside_period": False},
         )
-        count -= 1
-        if not count:
-            return
-    raise ValueError("not enough independently reconcilable period_cutoff candidates")
+        (near_start if is_start else near_end).append(mutation)
+    interleaved: list[_Mutation] = []
+    for index in range(max(len(near_start), len(near_end))):
+        if index < len(near_start):
+            interleaved.append(near_start[index])
+        if index < len(near_end):
+            interleaved.append(near_end[index])
+    if len(interleaved) < count:
+        raise ValueError("not enough independently reconcilable period_cutoff candidates")
+    yield from interleaved[:count]
 
 
 def apply_fx_cutoff_errors(
@@ -157,14 +169,25 @@ def apply_fx_cutoff_errors(
     *, reserved_payment_ids: Collection[str] = (),
 ) -> tuple[list[LedgerRow], list[TruthIssue], list[dict[str, Any]]]:
     """Return the revised ledger and its private truth and provenance entries."""
+    by_payment: dict[str, list[LedgerRow]] = defaultdict(list)
+    accruals_by_invoice: dict[str, list[LedgerRow]] = defaultdict(list)
+    for row in public.ledger:
+        payment_id = row["payment_id"]
+        if payment_id is not None:
+            by_payment[payment_id].append(row)
+        elif row["invoice_id"] is not None:
+            accruals_by_invoice[row["invoice_id"]].append(row)
+
     replacements: dict[str, LedgerRow] = {}
     issues: list[TruthIssue] = []
     changes: list[dict[str, Any]] = []
     for name, mutations in (
         (FindingType.FX_CONVERSION, _fx_mutations(
-            public, counts.get(FindingType.FX_CONVERSION, 0), reserved_payment_ids,
+            public, counts.get(FindingType.FX_CONVERSION, 0), reserved_payment_ids, by_payment,
         )),
-        (FindingType.PERIOD_CUTOFF, _cutoff_mutations(public, counts.get(FindingType.PERIOD_CUTOFF, 0))),
+        (FindingType.PERIOD_CUTOFF, _cutoff_mutations(
+            public, counts.get(FindingType.PERIOD_CUTOFF, 0), accruals_by_invoice,
+        )),
     ):
         if not counts.get(name, 0):
             continue

@@ -7,6 +7,7 @@ from unittest import TestCase
 
 from genesis.domain.money import convert_minor
 from genesis.evaluation.matcher import match
+from genesis.evaluation.public_proofs import verify_public_proofs
 from genesis.generation import generate_episode
 from genesis.generation.fx_cutoff import apply_fx_cutoff_errors, in_period
 
@@ -120,7 +121,7 @@ class FxCutoffInjectionTests(TestCase):
         invoice = next(doc for doc in self.public.invoices if doc["invoice_id"] == affected[0]["invoice_id"])
         self.assertLessEqual(period_start, datetime.fromisoformat(invoice["issued_at"]))
         self.assertLess(datetime.fromisoformat(invoice["issued_at"]), period_end)
-        self.assertTrue(all(datetime.fromisoformat(row["timestamp"]) < period_start for row in affected))
+        self.assertTrue(all(not in_period(row["timestamp"], self.public.policy) for row in affected))
         self.assertEqual(issue["expected_amount_minor"], invoice["total_minor"])
         self.assertEqual(issue["issue_id"], change["issue_id"])
         self.assertEqual(change["before"]["timestamp"], invoice["issued_at"])
@@ -148,3 +149,56 @@ class FxCutoffInjectionTests(TestCase):
         self.assertEqual(self.public.ledger, generate_episode(
             413, {"schema_version": "1.0.0", "error_counts": {}},
         ).public.ledger)
+
+    def test_cutoff_covers_both_period_start_and_period_end_boundaries(self):
+        sides = set()
+        for seed in range(20):
+            episode = generate_episode(seed, {"schema_version": "1.0.0", "error_counts": {"period_cutoff": 1}})
+            policy = episode.public.policy
+            ts = episode.evaluator.provenance["changes"][0]["after"]["timestamp"]
+            self.assertFalse(in_period(ts, policy))
+            if datetime.fromisoformat(ts) < datetime.fromisoformat(policy["period_start"]):
+                sides.add("before_start")
+            elif datetime.fromisoformat(ts) >= datetime.fromisoformat(policy["period_end"]):
+                sides.add("after_end")
+        self.assertEqual(sides, {"before_start", "after_end"})
+
+        scaled = generate_episode(
+            1001, {"schema_version": "1.0.0", "obligation_count": 20, "error_counts": {"period_cutoff": 2}},
+        )
+        policy = scaled.public.policy
+        scaled_sides = {
+            "before_start"
+            if datetime.fromisoformat(change["after"]["timestamp"]) < datetime.fromisoformat(policy["period_start"])
+            else "after_end"
+            for change in scaled.evaluator.provenance["changes"]
+        }
+        self.assertEqual(scaled_sides, {"before_start", "after_end"})
+
+    def test_invoice_date_rule_generates_reconcilable_fx_errors(self):
+        episode = generate_episode(
+            1004,
+            {
+                "schema_version": "1.0.0", "obligation_count": 20,
+                "base_currency": "GBP", "foreign_currency": "USD",
+                "timezone": "UTC", "fx_date_rule": "invoice_date",
+                "error_counts": {"fx_conversion": 2},
+            },
+        )
+        self.assertEqual(episode.public.policy["fx_date_rule"], "invoice_date")
+        self.assertEqual(len(episode.evaluator.truth["issues"]), 2)
+        invoice_docs = {doc["doc_id"] for doc in episode.public.invoices}
+        for issue in episode.evaluator.truth["issues"]:
+            self.assertEqual(issue["type"], "fx_conversion")
+            self.assertTrue(set(issue["acceptable_evidence_sets"][0]) & invoice_docs)
+        verify_public_proofs(episode)
+
+        compact = generate_episode(
+            413,
+            {
+                "schema_version": "1.0.0",
+                "fx_date_rule": "invoice_date",
+                "error_counts": {"fx_conversion": 1},
+            },
+        )
+        verify_public_proofs(compact)

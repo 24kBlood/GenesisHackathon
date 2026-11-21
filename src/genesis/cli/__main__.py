@@ -1,13 +1,15 @@
-"""Verify Genesis on the team's public, synthetic regression inputs."""
+"""Verify Genesis on the team's public, synthetic regression inputs and run demos."""
 
 import argparse
 import asyncio
 from collections import Counter
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from io import TextIOBase
 from pathlib import Path
-from time import monotonic
-from unittest import TestResult, TestLoader, TestSuite
+import re
+import sys
+from time import monotonic, perf_counter
+from unittest import TestLoader, TestResult, TestSuite
 
 
 _REPOSITORY = Path(__file__).resolve().parents[3]
@@ -17,6 +19,11 @@ _REQUIRED_MODULES = {
 }
 _GROUPS = ("schemas-and-datasets", "contract-matrix", "evaluation-matrix", "trajectories-and-pairs",
            "runtime-regressions", "docker-policy-smoke")
+_MATRIX_TEST = re.compile(r"^test_([CE]\d{2})_")
+_MISSING_MODULE_RE = re.compile(r"ModuleNotFoundError:\s+No module named '([^']+)'")
+_EXC_CLASS_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*(?:Error|Exception)):")
+_SAFE_DIFF_RE = re.compile(r"^[A-Za-z0-9_.: -]+ differs at \$[A-Za-z0-9_.\[\]-]*$")
+_DEMO_POLICIES = ("simple_reconciliation", "random", "mark_all", "oracle")
 
 
 class _Discard(TextIOBase):
@@ -47,6 +54,29 @@ def _cases(suite):
             yield item
 
 
+def _failed_test_error(case):
+    """Convert unittest's _FailedTest wrapper into a clean, path-free import error."""
+    identifier = case.id()
+    if type(case).__name__ != "_FailedTest" and not identifier.startswith("unittest.loader._FailedTest."):
+        return None
+    failed_module = identifier.rsplit(".", 1)[-1]
+    exc = getattr(case, "_exception", None)
+    text = str(exc) if exc is not None else ""
+    missing = _MISSING_MODULE_RE.search(text)
+    if missing:
+        pkg = missing.group(1)
+        return ModuleNotFoundError(
+            f"missing dependency '{pkg}' while importing {failed_module}; install tests/requirements-schema.lock",
+            name=pkg,
+        )
+    if "ImportError:" in text:
+        return ImportError(f"failed to import {failed_module}: ImportError")
+    last_line = text.strip().splitlines()[-1] if text.strip() else ""
+    exc_match = _EXC_CLASS_RE.search(last_line)
+    exc_name = exc_match.group(1) if exc_match else (type(exc).__name__ if exc is not None else "ImportError")
+    return ImportError(f"failed to import {failed_module}: {exc_name}")
+
+
 def _test_groups(root):
     tests = root / "tests"
     suite = TestLoader().discover(str(tests), top_level_dir=str(tests))
@@ -54,17 +84,22 @@ def _test_groups(root):
     modules = set()
     matrix_ids = Counter()
     for case in _cases(suite):
+        failed = _failed_test_error(case)
+        if failed is not None:
+            raise failed
         identifier = case.id()
         module = identifier.split(".", 1)[0]
         method = identifier.rsplit(".", 1)[-1]
         modules.add(module)
-        if method.startswith(("test_C", "test_E")):
-            matrix_ids[method[5:8]] += 1
+        matrix_match = _MATRIX_TEST.match(method)
+        matrix_id = matrix_match.group(1) if matrix_match else None
+        if matrix_id is not None:
+            matrix_ids[matrix_id] += 1
         if ".DockerPolicyTests." in identifier:
             group = "docker-policy-smoke"
-        elif method.startswith("test_C"):
+        elif matrix_id is not None and matrix_id.startswith("C"):
             group = "contract-matrix"
-        elif method.startswith("test_E"):
+        elif matrix_id is not None and matrix_id.startswith("E"):
             group = "evaluation-matrix"
         elif module in ("test_env_contract_and_isolation", "test_public_datasets"):
             group = "schemas-and-datasets"
@@ -81,10 +116,52 @@ def _test_groups(root):
     return groups
 
 
-def _run_group(name, cases, require_docker):
+@contextmanager
+def _capture_profile_runs(root, captured):
+    """Capture results from test_reproducibility_and_permutation to avoid double runs."""
+    module = sys.modules.get("test_reproducibility_and_permutation")
+    if module is None:
+        yield
+        return
+    orig_verify = getattr(module, "verify_reproducibility", None)
+    orig_bench = getattr(module, "local_benchmark", None)
+    if orig_verify is None or orig_bench is None:
+        yield
+        return
+    target = (Path(root) / "benchmarks" / "local_eval_profiles.json").resolve()
+
+    def wrapped_verify(profile_path):
+        started = monotonic()
+        result = orig_verify(profile_path)
+        if Path(profile_path).resolve() == target:
+            captured["reproducibility"] = (result, monotonic() - started)
+        return result
+
+    async def wrapped_benchmark(profile_path):
+        started = monotonic()
+        result = await orig_bench(profile_path)
+        if Path(profile_path).resolve() == target:
+            captured["benchmark"] = (result, monotonic() - started)
+        return result
+
+    module.verify_reproducibility = wrapped_verify
+    module.local_benchmark = wrapped_benchmark
+    try:
+        yield
+    finally:
+        module.verify_reproducibility = orig_verify
+        module.local_benchmark = orig_bench
+
+
+def _run_group(name, cases, require_docker, *, root=None, captured=None):
     started = monotonic()
     result = _Summary()
-    with redirect_stdout(_Discard()), redirect_stderr(_Discard()):
+    context = (
+        _capture_profile_runs(root, captured)
+        if name == "trajectories-and-pairs" and root is not None and captured is not None
+        else _null_context()
+    )
+    with context, redirect_stdout(_Discard()), redirect_stderr(_Discard()):
         TestSuite(cases).run(result)
     adverse = result.failures + result.errors + result.unexpectedSuccesses
     skipped_ids = {test.id() for test, _ in result.skipped}
@@ -106,31 +183,51 @@ def _run_group(name, cases, require_docker):
     return ok
 
 
-def _verify_profiles(root):
+@contextmanager
+def _null_context():
+    yield
+
+
+def _format_profile_error(error):
+    message = str(error).strip()
+    if isinstance(error, ValueError) and _SAFE_DIFF_RE.fullmatch(message):
+        return f"{type(error).__name__}: {message}"
+    return type(error).__name__
+
+
+def _verify_profiles(root, *, cached=None):
     started = monotonic()
     group = "replay-and-permutation"
     try:
         from genesis.evaluation.reproducibility import benchmark_summary, local_benchmark, verify_reproducibility
 
-        profiles = root / "benchmarks" / "local_eval_profiles.json"
-        checks = verify_reproducibility(profiles)
+        profiles = Path(root) / "benchmarks" / "local_eval_profiles.json"
+        if cached and "reproducibility" in cached:
+            checks, replay_elapsed = cached["reproducibility"]
+        else:
+            checks = verify_reproducibility(profiles)
+            replay_elapsed = monotonic() - started
         ok = checks.replay_passed == checks.pair_passed == checks.total == 20
         status = "PASS" if ok else "FAIL"
         print(f"{status} {group}: replay {checks.replay_passed}/{checks.total}, "
-              f"pairs {checks.pair_passed}/{checks.total} ({monotonic() - started:.3f}s)")
+              f"pairs {checks.pair_passed}/{checks.total} ({replay_elapsed:.3f}s)")
         group = "policy-diagnostics"
         started = monotonic()
-        benchmark = asyncio.run(local_benchmark(profiles))
+        if cached and "benchmark" in cached:
+            benchmark, bench_elapsed = cached["benchmark"]
+        else:
+            benchmark = asyncio.run(local_benchmark(profiles))
+            bench_elapsed = monotonic() - started
         policy_counts = Counter(row.policy for row in benchmark.diagnostics)
         expected = dict.fromkeys(("random", "simple_reconciliation", "mark_all", "oracle"), 20)
         if policy_counts != expected or any(row.transport_error is not None for row in benchmark.diagnostics):
             raise ValueError("incomplete policy diagnostics")
         summary = benchmark_summary(benchmark)
     except Exception as error:
-        print(f"FAIL {group} ({monotonic() - started:.3f}s): {type(error).__name__}")
+        print(f"FAIL {group} ({monotonic() - started:.3f}s): {_format_profile_error(error)}")
         return False
 
-    print(f"PASS {group}: {len(benchmark.diagnostics)}/80 local runs ({monotonic() - started:.3f}s)")
+    print(f"PASS {group}: {len(benchmark.diagnostics)}/80 local runs ({bench_elapsed:.3f}s)")
     for name in expected:
         metrics = summary["diagnostics"][name]
         elapsed = summary["wall_time_seconds"][name]
@@ -141,25 +238,162 @@ def _verify_profiles(root):
 
 
 def verify(root, *, require_docker=False):
+    root_path = Path(root)
     try:
         with redirect_stdout(_Discard()), redirect_stderr(_Discard()):
-            groups = _test_groups(root)
-    except (OSError, ImportError, ValueError, AssertionError) as error:
+            groups = _test_groups(root_path)
+    except ImportError as error:
+        print(f"FAIL verification setup: {type(error).__name__} ({error})")
+        return 1
+    except ValueError as error:
+        print(f"FAIL verification setup: ValueError ({error})")
+        return 1
+    except (OSError, AssertionError) as error:
         print(f"FAIL verification setup: {type(error).__name__} (test discovery or required groups)")
         return 1
-    statuses = [_run_group(name, members, require_docker) for name, members in groups.items()]
-    statuses.append(_verify_profiles(root))
+    captured = {}
+    statuses = [
+        _run_group(name, members, require_docker, root=root_path, captured=captured)
+        for name, members in groups.items()
+    ]
+    statuses.append(_verify_profiles(root_path, cached=captured))
     return 0 if all(statuses) else 1
 
 
-def main():
+def _summarize_action(action):
+    if not isinstance(action, dict):
+        return "invalid"
+    kind = action.get("type", "unknown")
+    if kind == "list_records":
+        return f"list_records(table={action.get('table')}, limit={action.get('limit')})"
+    if kind == "get_record":
+        return f"get_record(table={action.get('table')}, id={action.get('id')})"
+    if kind == "get_document":
+        return f"get_document(doc_id={action.get('doc_id')})"
+    if kind == "calculator":
+        return f"calculator(expr={action.get('expression')!r})"
+    if kind == "submit":
+        findings = action.get("findings", {})
+        items = findings.get("findings", []) if isinstance(findings, dict) else []
+        return f"submit({len(items)} finding(s))"
+    return str(kind)
+
+
+def _summarize_observation(observation):
+    if "records" in observation:
+        cursor = "more" if observation.get("cursor") else "end"
+        return f"records={len(observation['records'])} ({cursor})"
+    if "record" in observation:
+        return "record=1"
+    if "document" in observation:
+        return "document=1"
+    if "result" in observation:
+        return f"result={observation['result']}"
+    if "error" in observation:
+        return f"error={observation['error'].get('code', 'unknown')}"
+    if "status" in observation:
+        return f"status={observation['status']}"
+    return "ok"
+
+
+def demo(*, policy="simple_reconciliation", seed=20260304):
+    """Run one synthetic audit episode end-to-end and print a readable trace."""
+    from genesis.environment.auditor_env import AuditorEnv
+    from genesis.environment.episode import build_episode
+    from genesis.evaluation.benchmark import LocalPolicyRunner
+    from genesis.evaluation.judge import run_episode
+    from genesis.evaluation.oracle import OraclePolicy
+    from genesis.evaluation.permutation import TABLES, evidence_catalog
+    from genesis.generation.company import SCHEMA_VERSION, generate_episode
+    from genesis.policies import make_policy
+
+    if policy not in _DEMO_POLICIES:
+        raise ValueError(f"unsupported demo policy: {policy}")
+
+    config = {"schema_version": SCHEMA_VERSION, "error_counts": {"fx_conversion": 1}}
+    episode = generate_episode(seed, config)
+    public = episode.public
+    manifest = public.manifest
+
+    print(f"Genesis FinTech Demo | policy={policy} | seed={seed} | episode={manifest['episode_id']}")
+    counts = manifest["record_counts"]
+    print(
+        f"Period: [{manifest['period_start']}, {manifest['period_end']}) | "
+        f"Base: {manifest['base_currency']} | "
+        f"Records: ledger={counts['ledger']} invoices={counts['invoices']} "
+        f"payments={counts['payments']} fx={counts['fx']}"
+    )
+    print("Trace:")
+
+    def factory(_seed, _config):
+        return build_episode(
+            task="Audit the public financial records and submit evidenced findings.",
+            manifest=public.manifest,
+            policy=public.policy,
+            tables={name: getattr(public, name) for name in TABLES},
+            truth=episode.evaluator.truth,
+        )
+
+    env = AuditorEnv(factory, mode="eval", clock=perf_counter)
+    if policy == "oracle":
+        runner = LocalPolicyRunner(lambda: OraclePolicy(episode.evaluator.truth, evidence_catalog(public)))
+    else:
+        runner = LocalPolicyRunner(lambda: make_policy(policy, seed=seed))
+
+    def on_step(_episode_id, step, action, transition):
+        observation, _reward, terminated, truncated, _info = transition
+        flag = " [terminated]" if terminated else " [truncated]" if truncated else ""
+        print(
+            f"  step {step:2d}: {_summarize_action(action)} -> "
+            f"{_summarize_observation(observation)} "
+            f"(remaining={observation.get('remaining_steps')}){flag}"
+        )
+
+    outcome = asyncio.run(run_episode(env, seed=seed, config=config, runner=runner, on_step=on_step))
+    terminal = outcome.terminal
+    matching = terminal.matching
+    metrics = terminal.score.metrics
+    submitted = terminal.submission.get("findings", [])
+
+    print(f"Submitted findings ({len(submitted)}):")
+    for item in submitted:
+        print(
+            f"  - {item['type']}: amount={item['claimed_amount_minor']} {item['currency']}, "
+            f"affected={len(item['affected_ids'])}, evidence={len(item['evidence_ids'])}"
+        )
+    if not submitted:
+        print("  - (none)")
+
+    tp = matching.tp if matching is not None else 0
+    fp = matching.fp if matching is not None else 0
+    fn = matching.fn if matching is not None else 0
+    print(
+        f"Diagnostics: TP={tp} FP={fp} FN={fn} | "
+        f"P={metrics.precision:.4f} R={metrics.recall:.4f} F1={metrics.f1:.4f} | "
+        f"Return={terminal.score.reward:.4f} | "
+        f"Steps={terminal.total_steps} (inspection={terminal.score.inspection_steps}) | "
+        f"Reason={terminal.reason} | Wall={terminal.wall_time_seconds:.4f}s"
+    )
+    return 0 if outcome.transport_error is None else 1
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
+
     verify_parser = commands.add_parser("verify", help="run local regression and diagnostic checks")
-    verify_parser.add_argument("--all", action="store_true", required=True)
+    verify_parser.add_argument("--all", action="store_true", help="run all verification groups (default)")
     verify_parser.add_argument("--require-docker", action="store_true", help="fail if the Docker integration is skipped")
-    args = parser.parse_args()
-    return verify(_REPOSITORY, require_docker=args.require_docker)
+    verify_parser.add_argument("--root", type=Path, default=_REPOSITORY, help="repository root to verify")
+
+    demo_parser = commands.add_parser("demo", help="run a single-episode interactive audit demo")
+    demo_parser.add_argument("--policy", choices=_DEMO_POLICIES, default="simple_reconciliation")
+    demo_parser.add_argument("--seed", type=int, default=20260304)
+
+    args = parser.parse_args(argv)
+    if args.command == "demo":
+        return demo(policy=args.policy, seed=args.seed)
+    return verify(args.root, require_docker=args.require_docker)
 
 
 if __name__ == "__main__":

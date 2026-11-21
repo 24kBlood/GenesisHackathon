@@ -58,6 +58,24 @@ def _finite_float(value: str) -> float:
     return result
 
 
+def _reject_surrogates(value: object) -> object:
+    """Reject lone UTF-16 surrogate code points (U+D800–U+DFFF) anywhere in decoded JSON."""
+    stack: list[object] = [value]
+    while stack:
+        current = stack.pop()
+        if type(current) is str:
+            try:
+                current.encode("utf-8")
+            except UnicodeEncodeError:
+                raise ValueError("lone UTF-16 surrogate in JSON string") from None
+        elif type(current) is dict:
+            stack.extend(current.keys())
+            stack.extend(current.values())
+        elif type(current) is list:
+            stack.extend(current)
+    return value
+
+
 class JsonlProcess:
     """Read/write one policy subprocess and drain diagnostics independently."""
 
@@ -92,10 +110,10 @@ class JsonlProcess:
         if len(frame) > FRAME_BYTES:
             raise TransportError(TransportCode.FRAME_LIMIT)
         try:
-            return json.loads(
+            return _reject_surrogates(json.loads(
                 frame.decode("utf-8"), object_pairs_hook=_object,
                 parse_constant=_invalid_constant, parse_float=_finite_float,
-            )
+            ))
         except (ValueError, RecursionError):
             raise TransportError(TransportCode.BAD_FRAME) from None
 

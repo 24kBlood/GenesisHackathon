@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -50,7 +51,7 @@ def export_episode(episode: Episode, directory: Path | str) -> None:
     directory must exist. An unsuccessful serialization is never published.
     """
     target = Path(directory)
-    if target.exists():
+    if target.exists() or target.is_symlink():
         raise FileExistsError(target)
     files = {
         "public": public_files(episode.public),
@@ -65,6 +66,11 @@ def export_episode(episode: Episode, directory: Path | str) -> None:
         for projection, documents in files.items():
             destination = staged / projection
             destination.mkdir()
+            if projection == "evaluator-only":
+                os.chmod(destination, 0o700)
             for name, contents in documents.items():
-                (destination / name).write_bytes(contents)
+                file_path = destination / name
+                file_path.write_bytes(contents)
+                if projection == "evaluator-only":
+                    os.chmod(file_path, 0o600)
         staged.rename(target)
