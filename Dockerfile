@@ -15,6 +15,7 @@ COPY schemas/ schemas/
 COPY tests/ tests/
 COPY data/ data/
 COPY benchmarks/ benchmarks/
+COPY trajectories/ trajectories/
 
 ENV PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 USER 65532:65532

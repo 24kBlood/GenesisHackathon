@@ -26,7 +26,7 @@ jobs:
           test "$size" -le 1000000000
       - name: Verify with the network disabled
         run: |
-          container="$(docker create --network none --cpus 2 --memory 4g --memory-swap 4g \
+          container="$(docker create --pull never --network none --cpus 2 --memory 4g --memory-swap 4g \
             --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777 \
             --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
             genesis-verify:ci python -m genesis.cli verify --all)"
@@ -38,7 +38,7 @@ jobs:
       - name: Verify a synthetic JSON failure produces exit status 1
         run: |
           set +e
-          output="$(docker run --rm --network none --cpus 2 --memory 4g --memory-swap 4g \
+          output="$(docker run --rm --pull never --network none --cpus 2 --memory 4g --memory-swap 4g \
             --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777 \
             --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
             genesis-verify:ci python -c '
