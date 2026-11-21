@@ -1,5 +1,5 @@
 row_id,timestamp,account,debit_minor,credit_minor,currency,entity_id,invoice_id,payment_id
-row-5ec55410a927503b2ba1b25a,2026-11-01T10:00:00+05:00,bank,5043100,0,KZT,entity-7ab1f0a0e3ddedafa616661b,null,null
+row-5ec55410a927503b2ba1b25a,2026-11-01T10:00:00+05:00,bank,5243100,0,KZT,entity-7ab1f0a0e3ddedafa616661b,null,null
 row-c9f2f1864978feb9ab05a9bf,2026-11-06T10:00:00+05:00,bank,0,13200,KZT,entity-fbf131c2f26dac8f66bf0e4d,invoice-ff48e123cd437cf0dcfb809c,payment-9f57e6ed13b71c6ba5d01f2c
 row-f99aceed4393b5f84ac9e940,2026-11-05T10:00:00+05:00,expense,20000,0,KZT,entity-05b2f2d8faa9942adadb7b15,invoice-1df871c7a46a038123eca6f6,null
 row-19a186a0db82ef2010dc274c,2026-11-10T10:00:00+05:00,bank,0,20000,KZT,entity-05b2f2d8faa9942adadb7b15,invoice-1df871c7a46a038123eca6f6,payment-8182b1c87b8856d8a79bdeac
@@ -9,7 +9,7 @@ row-ef42b9db36694ff22bf5053b,2026-11-04T10:00:00+05:00,expense,5006500,0,KZT,ent
 row-ec1be299487419944579216c,2026-11-03T10:00:00+05:00,expense,13200,0,KZT,entity-fbf131c2f26dac8f66bf0e4d,invoice-ff48e123cd437cf0dcfb809c,null
 row-fc4405c7248ebb210f5e36b2,2026-10-31T23:59:00+05:00,accounts_payable,0,3400,KZT,entity-fa6a358cea6ffacaa827233d,invoice-1dfaed48bd62dc75d28ca19e,null
 row-86a407bd5fff46d11a0202ab,2026-11-08T10:00:00+05:00,accounts_payable,5006500,0,KZT,entity-5195f702c61612434e6fdc1e,invoice-b9b7c21888db67ce3001b7fc,payment-0e42baa57012050881d8eba2
-row-70c0722484e6bc18c557a0f8,2026-11-01T10:00:00+05:00,equity,0,5043100,KZT,entity-7ab1f0a0e3ddedafa616661b,null,null
+row-70c0722484e6bc18c557a0f8,2026-11-01T10:00:00+05:00,equity,0,5243100,KZT,entity-7ab1f0a0e3ddedafa616661b,null,null
 row-8474c83e9a644366abfb1d7f,2026-11-10T10:00:00+05:00,accounts_payable,20000,0,KZT,entity-05b2f2d8faa9942adadb7b15,invoice-1df871c7a46a038123eca6f6,payment-8182b1c87b8856d8a79bdeac
 row-529a3a998ca88f8e6a7ceff8,2026-10-31T23:59:00+05:00,expense,3400,0,KZT,entity-fa6a358cea6ffacaa827233d,invoice-1dfaed48bd62dc75d28ca19e,null
 row-e3bdb8b888f5ece3974d9b74,2026-11-08T10:00:00+05:00,bank,0,5006500,KZT,entity-5195f702c61612434e6fdc1e,invoice-b9b7c21888db67ce3001b7fc,payment-0e42baa57012050881d8eba2

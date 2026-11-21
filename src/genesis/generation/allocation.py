@@ -59,7 +59,7 @@ def _candidates(
         amount = payment["amount_minor"]
         if (
             payment["currency"] != base_currency
-            or len(payment["invoice_refs"]) != 1
+            or len(payment["invoice_refs"] or ()) != 1
             or amount <= 0
         ):
             continue
@@ -140,10 +140,11 @@ def apply_allocation_errors(
         original = [candidate.expense, candidate.payable]
         copied = [{**row, "row_id": new_id("row")} for row in original]
         additions.extend(copied)
-        evidence = [candidate.invoice["doc_id"], *(row["row_id"] for row in original + copied)]
+        row_ids = [row["row_id"] for row in original + copied]
+        evidence = [candidate.invoice["doc_id"], *row_ids]
         amount = candidate.invoice["total_minor"]
         record(
-            FindingType.DUPLICATE_INVOICE, amount, [candidate.invoice["invoice_id"], *evidence],
+            FindingType.DUPLICATE_INVOICE, amount, [candidate.invoice["invoice_id"], *row_ids],
             evidence,
             {"rows": original, "posted_minor": amount},
             {"rows": original + copied, "posted_minor": 2 * amount},
@@ -173,7 +174,7 @@ def apply_allocation_errors(
         ]
         record(
             FindingType.PAYMENT_ALLOCATION, shortfall,
-            [candidate.invoice["invoice_id"], candidate.payment["payment_id"], *evidence],
+            [candidate.invoice["invoice_id"], candidate.payment["payment_id"], row["row_id"], suspense_id],
             evidence,
             {"rows": [row], "posted_minor": amount},
             {"rows": after_rows, "posted_minor": amount - shortfall,

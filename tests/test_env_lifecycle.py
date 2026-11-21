@@ -135,6 +135,8 @@ class LifecycleTests(unittest.TestCase):
             {"type": "unknown"}, {"affected_ids": []}, {"claimed_amount_minor": True},
             {"claimed_amount_minor": 10000.0}, {"currency": "usd"},
             {"evidence_ids": ["id"] * 11}, {"explanation": "я" * 1001},
+            {"affected_ids": [chr(0xD800)]}, {"evidence_ids": [chr(0xDFFF)]},
+            {"explanation": chr(0xD800)},
             {"extra": "private"},
         ):
             bad_findings.append({**self.fixture.findings, "findings": [{**baseline, **changes}]})
@@ -144,6 +146,7 @@ class LifecycleTests(unittest.TestCase):
                 env.reset(121, {"clean": True})
                 self.assertEqual(self.step(env, self.submit(payload))[1:], (-1, True, False))
                 self.assertTrue(env.terminal_result.invalid_submission)
+                self.assertEqual(env.terminal_result.score.metrics.f1, 0)
                 self.assertEqual(env.terminal_result.submission["findings"], [])
                 self.assertEqual(self.step(env, self.submit())[1:], (0, True, False))
         self.assertEqual(len(self.scored), len(bad_findings))

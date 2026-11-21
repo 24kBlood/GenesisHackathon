@@ -1,5 +1,5 @@
 row_id,timestamp,account,debit_minor,credit_minor,currency,entity_id,invoice_id,payment_id
-row-e4577be23da99dda77ebee9f,2026-07-01T10:00:00+05:00,bank,3226460,0,KZT,entity-a2dde6f4bef7dd402a996591,null,null
+row-e4577be23da99dda77ebee9f,2026-07-01T10:00:00+05:00,bank,3426460,0,KZT,entity-a2dde6f4bef7dd402a996591,null,null
 row-2ec45ad1e6dd8f031271d3a2,2026-07-06T10:00:00+05:00,accounts_payable,11400,0,KZT,entity-61b62b7703252e324aef475c,invoice-52dc5513a8eba5b9eacff4b8,payment-ccac57e0eec0dcb2b68474d7
 row-f13afb0de6949f10db853f92,2026-07-08T10:00:00+05:00,accounts_payable,3168000,0,KZT,entity-a54d611a8a47763f326e4900,invoice-0b67003e3a68382c1339fcfa,payment-da3ea0e41c56687cee962946
 row-bf1737a8ba7cd31fc4b4118f,2026-07-06T10:00:00+05:00,bank,0,11400,KZT,entity-61b62b7703252e324aef475c,invoice-52dc5513a8eba5b9eacff4b8,payment-ccac57e0eec0dcb2b68474d7
@@ -16,7 +16,7 @@ row-8bdbd7c8f5ead9f6c137f874,2026-07-12T10:00:00+05:00,expense,10987,0,KZT,entit
 row-e317687dc0520c5f8cd883a8,2026-07-13T10:00:00+05:00,accounts_payable,5493,0,KZT,entity-da36062e64c861aea619ec33,invoice-ae089495405f1cc29c66eca2,payment-4afce95a0574edd1417bcb52
 row-b8f63e7ee9f70fffe3c8cbe3,2026-07-11T10:00:00+05:00,expense,10987,0,KZT,entity-da36062e64c861aea619ec33,invoice-ae089495405f1cc29c66eca2,null
 row-3ad22a72140c78344440ca3b,2026-07-03T10:00:00+05:00,accounts_payable,0,11400,KZT,entity-61b62b7703252e324aef475c,invoice-52dc5513a8eba5b9eacff4b8,null
-row-60a6ca6312347a0837476a47,2026-07-01T10:00:00+05:00,equity,0,3226460,KZT,entity-a2dde6f4bef7dd402a996591,null,null
+row-60a6ca6312347a0837476a47,2026-07-01T10:00:00+05:00,equity,0,3426460,KZT,entity-a2dde6f4bef7dd402a996591,null,null
 row-92bbef188fe2fd1ecdee4aa7,2026-07-03T10:00:00+05:00,expense,11400,0,KZT,entity-61b62b7703252e324aef475c,invoice-52dc5513a8eba5b9eacff4b8,null
 row-edb6ecf94e21f0ffd5b0ab7e,2026-07-15T10:00:00+05:00,bank,0,10987,KZT,entity-da36062e64c861aea619ec33,invoice-b460f9818d5c27cb8c13112f,payment-4e047afbe21d7f63dddcbce5
 row-b735c277120dcc78018b4d91,2026-07-05T10:00:00+05:00,accounts_payable,0,5800,KZT,entity-c4dfdb5216aa87c8b64f4f6a,invoice-d85bfcf94e82eadcd56445a9,null

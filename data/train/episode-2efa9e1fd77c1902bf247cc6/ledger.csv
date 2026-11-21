@@ -1,9 +1,9 @@
 row_id,timestamp,account,debit_minor,credit_minor,currency,entity_id,invoice_id,payment_id
 row-ed0707dd85e263ed42cca47b,2026-12-11T10:00:00+05:00,accounts_payable,0,31516,KZT,entity-5f61f0dab452da10b3a01962,invoice-630a3aabd627d3db153202bc,null
-row-39b6fe82361e20d6c95eff01,2026-12-01T10:00:00+05:00,bank,2352543,0,KZT,entity-129a88940db23f4c10fc43e8,null,null
+row-39b6fe82361e20d6c95eff01,2026-12-01T10:00:00+05:00,bank,2552543,0,KZT,entity-129a88940db23f4c10fc43e8,null,null
 row-806971c01741eb8cfd1537e5,2026-12-03T10:00:00+05:00,accounts_payable,0,20000,KZT,entity-8082bf74430ce57e6cc7eb6e,invoice-40b5c937c22e73120d60dc77,null
 row-010a1c1e07b433a6110cdbbd,2026-12-13T10:00:00+05:00,bank,0,7879,KZT,entity-5f61f0dab452da10b3a01962,invoice-630a3aabd627d3db153202bc,payment-6704a9f978cd39b2a404f2b2
-row-b1398faa3b59a802b6b6c284,2026-12-01T10:00:00+05:00,equity,0,2352543,KZT,entity-129a88940db23f4c10fc43e8,null,null
+row-b1398faa3b59a802b6b6c284,2026-12-01T10:00:00+05:00,equity,0,2552543,KZT,entity-129a88940db23f4c10fc43e8,null,null
 row-bf2a440deedb2286dde8b8dc,2026-12-06T10:00:00+05:00,bank,0,20000,KZT,entity-8082bf74430ce57e6cc7eb6e,invoice-40b5c937c22e73120d60dc77,payment-7979d82245f909495ec91919
 row-76ad00aaeebb57b573db3e8f,2026-12-01T10:00:00+05:00,expense,11200,0,KZT,entity-f21a1e83d4bedcca573213b2,invoice-002f4750780e2f8112b18490,null
 row-10be97a9b31cd609050510b3,2026-12-10T10:00:00+05:00,bank,0,1200,KZT,entity-fb9e690d630a10caed5a3ab5,invoice-f8aca8c04b7ccef24d9aab98,payment-14812d0ec063fc9fdfbdb98b

@@ -98,6 +98,10 @@ def _oracle(episode: Episode) -> OraclePolicy:
     return OraclePolicy(episode.evaluator.truth, evidence_catalog(episode.public))
 
 
+def _reconciliation_runner() -> LocalPolicyRunner:
+    return LocalPolicyRunner(lambda: make_policy("simple_reconciliation", seed=POLICY_SEED))
+
+
 def _canonical(value) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
@@ -226,6 +230,15 @@ async def _verify(profiles) -> ReproducibilityReport:
             if original_score.score.metrics.f1 != 1.0:
                 raise ValueError("oracle did not reach full F1")
             require_replay_equal(profile.name, "oracle scores", _diagnostics(original_score), _diagnostics(moved_score))
+            _, original_score = await _capture(profile, _reconciliation_runner(), lambda *_: first)
+            _, moved_score = await _capture(profile, _reconciliation_runner(), lambda *_: moved)
+            require_replay_equal(
+                profile.name, "mapped public policy answer", _normalized_submission(original_score.submission),
+                _normalized_submission(rewrite_ids(moved_score.submission, inverse)),
+            )
+            require_replay_equal(
+                profile.name, "public policy scores", _diagnostics(original_score), _diagnostics(moved_score),
+            )
         except ValueError as error:
             raise ValueError(f"{profile.name}: pair: {error}") from None
     return ReproducibilityReport(len(profiles), len(profiles), len(profiles))

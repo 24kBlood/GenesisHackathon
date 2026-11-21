@@ -1,5 +1,8 @@
 *
 !Dockerfile
+!Dockerfile.policy
+!LICENSE
+!NOTICE
 !src/
 !src/**
 !schemas/

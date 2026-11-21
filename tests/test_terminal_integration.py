@@ -110,7 +110,7 @@ class TerminalIntegrationTests(unittest.TestCase):
                 self.assertEqual(result.submission, {"episode_id": self.episode_id, "findings": []})
                 self.assertEqual(result.total_steps, 1)
                 self.assertEqual(result.score.inspection_steps, 0)
-                self.assert_score(result, (0, 0, 0), (0, 0, 1), -1)
+                self.assert_score(result, (0, 0, 0), (0, 0, 0), -1)
 
     def test_step_limit_and_final_step_submit(self):
         for final, expected_reason, expected_steps, reward in (

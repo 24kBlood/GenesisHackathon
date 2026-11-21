@@ -12,7 +12,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from genesis.environment.auditor_env import AuditorEnv, Episode, ToolCode, ToolError
-from genesis.environment.docker_policy import DockerPolicy, PolicyCleanupError, _create_arguments, _host_environment
+from genesis.environment.docker_policy import (
+    DockerPolicy, PolicyCleanupError, _IMAGE_FIELDS, _create_arguments, _host_environment,
+)
 from genesis.environment.jsonl import FRAME_BYTES, STDERR_LINE_BYTES, JsonlProcess, TransportCode, TransportError
 from genesis.evaluation.judge import run_episode
 from genesis.evaluation.matcher import match
@@ -165,7 +167,7 @@ class EvaluatorIsolationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(report.terminal.reason, "timeout" if want is TransportCode.TIMEOUT else "transport")
                 self.assertEqual(report.terminal.submission["findings"], [])
                 self.assertEqual(report.terminal.score.inspection_steps, 0)
-                self.assertEqual(report.terminal.score.reward, 1)
+                self.assertEqual((report.terminal.score.metrics.f1, report.terminal.score.reward), (0, -1))
                 self.assertEqual(len(scored), 1)
 
     async def _check_contract_sized_unicode_submission(self):
@@ -202,17 +204,58 @@ class EvaluatorIsolationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(commands.await_args.args[1:4], ("rm", "--force", "--volumes"))
         self.assertEqual(scored, [])
 
-    async def test_missing_image_is_normal_truncation_without_worker(self):
+    async def test_missing_image_aborts_without_scoring(self):
         runner = DockerPolicy("synthetic:missing")
         env, scored = self.make_env(SimpleNamespace(process=SimpleNamespace(returncode=0)))
         command = AsyncMock(side_effect=TransportError(TransportCode.PROCESS_ERROR))
-        with patch.object(runner, "_management", command):
-            report = await run_episode(env, seed=986, config={"clean": True}, runner=runner)
+        with patch.object(runner, "_management", command), self.assertRaises(TransportError) as error:
+            await run_episode(env, seed=986, config={"clean": True}, runner=runner)
         self.assertEqual(command.await_count, 1)
-        self.assertEqual(report.transport_error, TransportCode.PROCESS_ERROR)
-        self.assertEqual(report.terminal.submission["findings"], [])
-        self.assertTrue(report.terminal.truncated)
-        self.assertEqual(len(scored), 1)
+        self.assertEqual(error.exception.code, TransportCode.PROCESS_ERROR)
+        self.assertIsNone(env.terminal_result)
+        self.assertEqual(scored, [])
+
+    async def test_completed_submission_survives_terminal_acknowledgement_failure(self):
+        for code in (TransportCode.EOF, TransportCode.TIMEOUT):
+            with self.subTest(code=code):
+                channel = SimpleNamespace(
+                    send=AsyncMock(side_effect=[None, TransportError(code)]),
+                    receive=AsyncMock(return_value={"type": "submit", "findings": self.fixture.findings}),
+                )
+
+                @asynccontextmanager
+                async def open_channel(deadline):
+                    yield channel
+
+                runner = SimpleNamespace(open=open_channel, process=SimpleNamespace(returncode=0))
+                env, scored = self.make_env(runner)
+                result = await run_episode(env, seed=986, config={"clean": False}, runner=runner)
+                self.assertIsNone(result.transport_error)
+                self.assertTrue(result.terminal.terminated)
+                self.assertEqual(result.terminal.score.reward, 1)
+                self.assertEqual(len(scored), 1)
+
+    async def test_protocol_fault_after_inspection_receives_failing_score_on_both_books(self):
+        for clean in (False, True):
+            with self.subTest(clean=clean):
+                channel = SimpleNamespace(
+                    send=AsyncMock(),
+                    receive=AsyncMock(side_effect=[
+                        {"type": "get_document", "doc_id": "policy"},
+                        TransportError(TransportCode.BAD_FRAME),
+                    ]),
+                )
+
+                @asynccontextmanager
+                async def open_channel(deadline):
+                    yield channel
+
+                runner = SimpleNamespace(open=open_channel, process=SimpleNamespace(returncode=0))
+                env, _ = self.make_env(runner)
+                result = await run_episode(env, seed=986, config={"clean": clean}, runner=runner)
+                self.assertEqual(result.transport_error, TransportCode.BAD_FRAME)
+                self.assertEqual(result.terminal.score.inspection_steps, 1)
+                self.assertEqual((result.terminal.score.metrics.f1, result.terminal.score.reward), (0, -1))
 
 
 class DockerConfigurationTests(unittest.TestCase):
@@ -243,7 +286,7 @@ class DockerImageTests(unittest.IsolatedAsyncioTestCase):
                 inspect = AsyncMock(return_value=json.dumps([{"Id": image_id, "Config": config}]).encode("ascii"))
                 with patch.object(runner, "_management", inspect):
                     self.assertEqual(await runner._local_image_id(deadline), image_id)
-                inspect.assert_awaited_once_with(deadline, "image", "inspect", "synthetic:local", output_limit=65536)
+                inspect.assert_awaited_once_with(deadline, "image", "inspect", "--format", _IMAGE_FIELDS, "synthetic:local")
 
     async def test_rejects_declared_volumes_or_unverifiable_image_config(self):
         runner = DockerPolicy("synthetic:local")

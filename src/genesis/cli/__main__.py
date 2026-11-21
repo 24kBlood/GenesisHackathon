@@ -6,6 +6,7 @@ from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
 from io import TextIOBase
 from pathlib import Path
+import re
 from time import monotonic
 from unittest import TestResult, TestLoader, TestSuite
 
@@ -17,6 +18,7 @@ _REQUIRED_MODULES = {
 }
 _GROUPS = ("schemas-and-datasets", "contract-matrix", "evaluation-matrix", "trajectories-and-pairs",
            "runtime-regressions", "docker-policy-smoke")
+_MATRIX_TEST = re.compile(r"test_([CE]\d{2})(?:_|$)")
 
 
 class _Discard(TextIOBase):
@@ -49,7 +51,14 @@ def _cases(suite):
 
 def _test_groups(root):
     tests = root / "tests"
-    suite = TestLoader().discover(str(tests), top_level_dir=str(tests))
+    loader = TestLoader()
+    suite = loader.discover(str(tests), top_level_dir=str(tests))
+    if loader.errors:
+        # Discovery represents import failures as synthetic test cases.
+        for case in _cases(suite):
+            if case.id().startswith("unittest.loader._FailedTest."):
+                case.debug()
+        raise ValueError("test discovery failed")
     groups = {name: [] for name in _GROUPS}
     modules = set()
     matrix_ids = Counter()
@@ -58,13 +67,15 @@ def _test_groups(root):
         module = identifier.split(".", 1)[0]
         method = identifier.rsplit(".", 1)[-1]
         modules.add(module)
-        if method.startswith(("test_C", "test_E")):
-            matrix_ids[method[5:8]] += 1
+        matrix_case = _MATRIX_TEST.match(method)
+        matrix_id = matrix_case[1] if matrix_case else ""
+        if matrix_id:
+            matrix_ids[matrix_id] += 1
         if ".DockerPolicyTests." in identifier:
             group = "docker-policy-smoke"
-        elif method.startswith("test_C"):
+        elif matrix_id.startswith("C"):
             group = "contract-matrix"
-        elif method.startswith("test_E"):
+        elif matrix_id.startswith("E"):
             group = "evaluation-matrix"
         elif module in ("test_env_contract_and_isolation", "test_public_datasets"):
             group = "schemas-and-datasets"
@@ -144,7 +155,7 @@ def verify(root, *, require_docker=False):
     try:
         with redirect_stdout(_Discard()), redirect_stderr(_Discard()):
             groups = _test_groups(root)
-    except (OSError, ImportError, ValueError, AssertionError) as error:
+    except (OSError, ImportError, ValueError, AssertionError, SyntaxError) as error:
         print(f"FAIL verification setup: {type(error).__name__} (test discovery or required groups)")
         return 1
     statuses = [_run_group(name, members, require_docker) for name, members in groups.items()]
@@ -153,12 +164,25 @@ def verify(root, *, require_docker=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Verify Genesis or run a policy on a public diagnostic profile.")
     commands = parser.add_subparsers(dest="command", required=True)
     verify_parser = commands.add_parser("verify", help="run local regression and diagnostic checks")
     verify_parser.add_argument("--all", action="store_true", required=True)
     verify_parser.add_argument("--require-docker", action="store_true", help="fail if the Docker integration is skipped")
+    runner = commands.add_parser("run-policy", help="score a closed run on one public diagnostic profile")
+    runner.add_argument("profile")
+    source = runner.add_mutually_exclusive_group(required=True)
+    source.add_argument("--policy", choices=("random", "simple_reconciliation", "mark_all"))
+    source.add_argument("--image", help="local Docker policy image")
+    runner.add_argument("--cpus", type=int, default=1)
+    runner.add_argument("--memory-mib", type=int, default=512)
+    runner.add_argument("--tmpfs-mib", type=int, default=0)
+    runner.add_argument("--trace", type=Path, help="write a new public JSONL trace")
     args = parser.parse_args()
+    if args.command == "run-policy":
+        from .run_policy import run_policy
+
+        return run_policy(_REPOSITORY, args)
     return verify(_REPOSITORY, require_docker=args.require_docker)
 
 

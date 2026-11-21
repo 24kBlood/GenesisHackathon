@@ -21,6 +21,15 @@ PYTHONPATH=src python -m genesis.policies.worker random --seed 17
 
 В образ рабочего процесса включаются только `genesis/policies`, `genesis/domain`, `genesis/environment/jsonl.py` и соответствующие файлы `__init__.py`. Oracle и доверенная часть оценки в образ не входят.
 
+Закрытый прогон на публичном профиле с одной ошибкой FX:
+
+```sh
+docker build -f Dockerfile.policy -t genesis-policy:local .
+PYTHONPATH=src python -m genesis.cli run-policy standard-03 --image genesis-policy:local --trace demo-public.jsonl
+```
+
+В PowerShell задайте `$env:PYTHONPATH = 'src'` перед запуском Python. Команда выводит итоговые метрики в терминал координатора. Параметр `--trace` сохраняет публичные действия и наблюдения в новый файл. Для запуска той же встроенной политики внутри Python используйте `--policy simple_reconciliation` вместо `--image genesis-policy:local`.
+
 ## Локальная сверка
 
 Из корня на Python 3.11 с установленным тестовым lock-файлом:
