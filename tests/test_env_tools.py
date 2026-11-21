@@ -57,7 +57,7 @@ class PublicToolsTests(unittest.TestCase):
         self.assertEqual((reward, terminated, truncated, info), (0, False, False, {}))
         return observation
 
-    def test_pages_cover_rows_in_stable_order(self):
+    def test_C06_pages_cover_rows_in_stable_order(self):
         self.tables["ledger"] = [{**self.tables["ledger"][0], "row_id": f"row-{i}"} for i in range(123)]
         env = self.make_env()
         action = {"type": "list_records", "table": "ledger"}
@@ -72,7 +72,7 @@ class PublicToolsTests(unittest.TestCase):
         self.assertEqual(combined, self.tables["ledger"])
         self.assertEqual(len(self.observation(env, {**action, "limit": 1})["records"]), 1)
 
-    def test_empty_table_invalid_limits_and_nontransferable_cursors(self):
+    def test_C07_empty_table_invalid_limits_and_nontransferable_cursors(self):
         self.tables["fx"] = []
         env = self.make_env()
         action = {"type": "list_records", "table": "ledger", "limit": 1}
@@ -94,7 +94,7 @@ class PublicToolsTests(unittest.TestCase):
         self.assertNotEqual(self.observation(env, action)["cursor"], cursor)
         self.assertEqual(self.observation(env, {**action, "cursor": cursor})["error"]["code"], "invalid_cursor")
 
-    def test_index_covers_each_table_docs_and_evidence_catalog(self):
+    def test_C09_index_covers_each_table_docs_and_evidence_catalog(self):
         env = self.make_env()
         keys = {
             "ledger": self.tables["ledger"][0]["row_id"],
@@ -104,8 +104,11 @@ class PublicToolsTests(unittest.TestCase):
         }
         for table, row_id in keys.items():
             action = {"type": "get_record", "table": table, "id": row_id}
-            self.assertEqual(self.observation(env, action)["record"], self.tables[table][0])
-            self.assertEqual(self.observation(env, {**action, "id": "missing"})["error"]["code"], "not_found")
+            found = self.observation(env, action)
+            self.assertEqual(found["record"], self.tables[table][0])
+            self.assertEqual(self.observation(env, {**action, "id": "missing"}), {
+                "remaining_steps": found["remaining_steps"] - 1, "error": {"code": "not_found"},
+            })
         for document in (*self.tables["invoices"], *self.tables["payments"]):
             self.assertEqual(
                 self.observation(env, {"type": "get_document", "doc_id": document["doc_id"]})["document"],
