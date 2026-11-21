@@ -1,2 +1,3 @@
 # Canonical public dataset bytes are UTF-8/LF on every checkout.
 data/** -text
+trajectories/*.jsonl text eol=lf

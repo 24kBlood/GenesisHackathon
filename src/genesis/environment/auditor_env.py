@@ -283,6 +283,7 @@ class AuditorEnv:
         self._deadline = started_at + self._timeout
         self._completion = None
         self._terminal_result = None
+        self._last_action_failed = False
         return observation, {}
 
     @property
@@ -329,6 +330,11 @@ class AuditorEnv:
             return self._terminal_reply(0.0)
         return self._finish(None, terminated=False, reason=reason)
 
+    @property
+    def last_action_failed(self) -> bool:
+        """Trusted recorder metadata, including errors masked by terminal status."""
+        return self._last_action_failed
+
     def step(self, action: object) -> StepResult:
         if self._episode is None:
             raise RuntimeError("reset is required before step")
@@ -341,10 +347,13 @@ class AuditorEnv:
         self._remaining -= 1
         kind = action.get("type") if type(action) is dict else None
         if type(kind) is str and kind == "submit":
-            return self._finish(_validated_submission(action, self._episode_id), terminated=True)
+            submission = _validated_submission(action, self._episode_id)
+            self._last_action_failed = submission is None
+            return self._finish(submission, terminated=True)
 
         self._inspection_steps += 1
         observation = self._research(action, kind)
+        self._last_action_failed = "error" in observation
         if self._remaining == 0:
             return self._finish(None, terminated=False, reason="step_limit")
         return {"remaining_steps": self._remaining, **observation}, 0.0, False, False, {}
