@@ -1,0 +1,239 @@
+{
+  "profile_version": "1.0.0",
+  "generator_version": "1.0.0",
+  "schema_version": "1.0.0",
+  "policy_seed": 89131,
+  "permutation_seed": 74137,
+  "profiles": [
+    {
+      "name": "clean-01",
+      "seed": 20260301,
+      "category": "clean",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {}
+      }
+    },
+    {
+      "name": "clean-02",
+      "seed": 20260302,
+      "category": "clean",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {},
+        "include_distractors": true
+      }
+    },
+    {
+      "name": "clean-03",
+      "seed": 20260303,
+      "category": "clean",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {}
+      }
+    },
+    {
+      "name": "clean-04",
+      "seed": 20260304,
+      "category": "clean",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {},
+        "include_distractors": true
+      }
+    },
+    {
+      "name": "clean-05",
+      "seed": 20260305,
+      "category": "clean",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {},
+        "include_distractors": true
+      }
+    },
+    {
+      "name": "interacting-01",
+      "seed": 20260306,
+      "category": "interacting",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {},
+        "interaction_scenarios": [
+          "partial_fx_payment_at_cutoff"
+        ]
+      }
+    },
+    {
+      "name": "interacting-02",
+      "seed": 20260307,
+      "category": "interacting",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {},
+        "interaction_scenarios": [
+          "duplicate_invoice_with_fx"
+        ]
+      }
+    },
+    {
+      "name": "interacting-03",
+      "seed": 20260308,
+      "category": "interacting",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {},
+        "interaction_scenarios": [
+          "partial_fx_payment_at_cutoff"
+        ],
+        "include_distractors": true
+      }
+    },
+    {
+      "name": "interacting-04",
+      "seed": 20260309,
+      "category": "interacting",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {},
+        "interaction_scenarios": [
+          "duplicate_invoice_with_fx"
+        ],
+        "include_distractors": true
+      }
+    },
+    {
+      "name": "interacting-05",
+      "seed": 20260310,
+      "category": "interacting",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {},
+        "interaction_scenarios": [
+          "partial_fx_payment_at_cutoff",
+          "duplicate_invoice_with_fx"
+        ],
+        "include_distractors": true
+      }
+    },
+    {
+      "name": "standard-01",
+      "seed": 20260311,
+      "category": "standard",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {
+          "duplicate_invoice": 1
+        }
+      }
+    },
+    {
+      "name": "standard-02",
+      "seed": 20260312,
+      "category": "standard",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {
+          "payment_allocation": 1
+        }
+      }
+    },
+    {
+      "name": "standard-03",
+      "seed": 20260313,
+      "category": "standard",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {
+          "fx_conversion": 1
+        }
+      }
+    },
+    {
+      "name": "standard-04",
+      "seed": 20260314,
+      "category": "standard",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {
+          "period_cutoff": 1
+        }
+      }
+    },
+    {
+      "name": "standard-05",
+      "seed": 20260315,
+      "category": "standard",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {
+          "duplicate_invoice": 1,
+          "payment_allocation": 1
+        }
+      }
+    },
+    {
+      "name": "standard-06",
+      "seed": 20260316,
+      "category": "standard",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {
+          "fx_conversion": 1,
+          "period_cutoff": 1
+        }
+      }
+    },
+    {
+      "name": "standard-07",
+      "seed": 20260317,
+      "category": "standard",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {
+          "payment_allocation": 1,
+          "fx_conversion": 1
+        }
+      }
+    },
+    {
+      "name": "standard-08",
+      "seed": 20260318,
+      "category": "standard",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {
+          "duplicate_invoice": 1,
+          "period_cutoff": 1
+        }
+      }
+    },
+    {
+      "name": "standard-09",
+      "seed": 20260319,
+      "category": "standard",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {
+          "fx_conversion": 1,
+          "duplicate_invoice": 1
+        },
+        "include_distractors": true
+      }
+    },
+    {
+      "name": "standard-10",
+      "seed": 20260320,
+      "category": "standard",
+      "config": {
+        "schema_version": "1.0.0",
+        "error_counts": {
+          "payment_allocation": 1,
+          "period_cutoff": 1
+        },
+        "include_distractors": true
+      }
+    }
+  ]
+}
