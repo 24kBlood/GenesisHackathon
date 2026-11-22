@@ -1,25 +1,32 @@
+<div align="center">
+
 # Genesis FinTech
 
-**Воспроизводимая среда для проверки ИИ-агентов в финансовом аудите.** Агент исследует счета, платежи, проводки и курсы вымышленной компании, затем отправляет найденные расхождения со ссылками на доказательства. Оценщик считает, сколько ошибок найдено, пропущено или отмечено ошибочно.
+**Среда для проверки ИИ-агентов в финансовом аудите**
 
-Интерфейс `reset` / `step` и записанные траектории позволяют воспроизводить прогоны и проводить эксперименты с обучением с подкреплением.
+Агент ищет расхождения в учёте вымышленной компании и прикладывает ссылки на записи. Оценщик сверяет выводы с закрытым эталоном и рассчитывает награду.
 
-[![Проверка контрактов и wheel](https://github.com/24kBlood/GenesisHackathon/actions/workflows/data-contract.yml/badge.svg?branch=main)](https://github.com/24kBlood/GenesisHackathon/actions/workflows/data-contract.yml)
-[![Автономная проверка](https://github.com/24kBlood/GenesisHackathon/actions/workflows/offline-verify.yml/badge.svg?branch=main)](https://github.com/24kBlood/GenesisHackathon/actions/workflows/offline-verify.yml)
+[![Проверка контрактов и пакета](https://github.com/24kBlood/GenesisHackathon/actions/workflows/data-contract.yml/badge.svg?branch=main)](https://github.com/24kBlood/GenesisHackathon/actions/workflows/data-contract.yml) [![Автономная проверка](https://github.com/24kBlood/GenesisHackathon/actions/workflows/offline-verify.yml/badge.svg?branch=main)](https://github.com/24kBlood/GenesisHackathon/actions/workflows/offline-verify.yml) [![Изоляция политики](https://github.com/24kBlood/GenesisHackathon/actions/workflows/policy-isolation.yml/badge.svg?branch=main)](https://github.com/24kBlood/GenesisHackathon/actions/workflows/policy-isolation.yml)
 
-[Быстрый старт](#быстрый-старт) · [Проверка для жюри](materials/submission/README.md) · [Данные](#данные-и-траектории) · [Как устроена среда](#как-устроена-среда) · [Проверки](#проверки-и-результаты)
+[**Запустить демо**](#быстрый-старт) · [Материалы для жюри](materials/submission/README.md) · [Устройство среды](#как-устроена-среда) · [Данные и траектории](#данные-и-траектории)
 
-Ссылки на видео, презентацию и документ подачи ещё не опубликованы в репозитории. [Внешние материалы](materials/submission/README.md#внешние-материалы-и-подача)
+</div>
 
 ## Быстрый старт
 
-**Демо одной командой.** Если установлены Git и `uv`, откройте PowerShell или терминал в любой папке и выполните:
+Команда работает **из любой папки** в Windows PowerShell, macOS и Linux. Нужны Git и `uv`, а при первом запуске — интернет для загрузки проекта и окружения Python 3.11. [Установка uv](https://docs.astral.sh/uv/getting-started/installation/) · [Запуск из клона](#запуск-из-клона-репозитория)
 
 ```powershell
 uvx --python 3.11 --from 'git+https://github.com/24kBlood/GenesisHackathon.git@main' genesis demo
 ```
 
-При первом запуске нужен интернет. `uvx` загрузит проект и подготовит окружение с Python 3.11. Скриптовая политика покажет все пять шагов, а итоговая строка `Diagnostics` выведет `TP=1 FP=0 FN=0` и `Return=0.9920`. [Установка uv](https://docs.astral.sh/uv/getting-started/installation/)
+### Что показывает демо
+
+В открытом синтетическом эпизоде политика простой сверки пересчитывает платёж в иенах по курсу на дату платежа и сравнивает результат с банковской проводкой. За **5 шагов** она находит одно валютное расхождение и получает награду **0,992**. В строке `Diagnostics` результат обозначен как `TP=1 FP=0 FN=0`.
+
+![Кадр демонстрации: по курсу ожидалось 20 658,00 тенге, в проводке 20 864,58 тенге. Расхождение составляет 206,58 тенге.](docs/assets/demo-fx.webp)
+
+Кадр записанного демо на [коммите 9e38ca4](https://github.com/24kBlood/GenesisHackathon/commit/9e38ca4da8f809c66fa8942b18b04e0463da5bb0). Для проверки всего проекта используйте [инструкцию для жюри](materials/submission/README.md).
 
 ### Запуск из клона репозитория
 
@@ -30,7 +37,8 @@ git clone https://github.com/24kBlood/GenesisHackathon.git
 cd GenesisHackathon
 ```
 
-**Windows PowerShell**
+<details>
+<summary>Windows PowerShell</summary>
 
 Команды ниже вводите по одной, нажимая Enter после каждой. Если вместо приглашения `PS ...>` видите `>>` и не можете вернуться к обычному вводу, откройте новую вкладку PowerShell.
 
@@ -58,6 +66,8 @@ Test-Path .\tests\requirements-schema.lock
 $env:PYTHONPATH = 'src'
 .\.venv\Scripts\python.exe -m genesis.cli demo
 ```
+
+</details>
 
 <details>
 <summary>Linux и macOS</summary>
@@ -114,7 +124,13 @@ flowchart TD
 
 ## Проверки и результаты
 
-Запустите `python -m genesis.cli verify --all` в окружении быстрого старта. Команда проверяет схемы, датасет, контракт среды, награду и траектории. Для PowerShell используйте интерпретатор из `.venv`. [Матрица проверок](docs/QA_CHECKLIST.md)
+Команда проверяет схемы, данные, контракт среды, награду и траектории. Её можно выполнить из любой папки с Git и `uv`.
+
+```powershell
+uvx --python 3.11 --from 'genesis-fintech-env[verify] @ git+https://github.com/24kBlood/GenesisHackathon.git@main' genesis verify --all
+```
+
+Из клона с установленными зависимостями запустите `python -m genesis.cli verify --all` с `PYTHONPATH=src`. В PowerShell используйте интерпретатор из `.venv`. [Матрица проверок](docs/QA_CHECKLIST.md)
 
 ### Офлайн-проверка в Docker
 
@@ -128,7 +144,7 @@ docker run --rm --pull never --network none --cpus 2 --memory 4g --memory-swap 4
   genesis-verify:local python -m genesis.cli verify --all
 ```
 
-Изоляция внешнего воркера проверяется отдельным заданием CI с реальным Linux-контейнером. [Результаты офлайн-прогона](https://github.com/24kBlood/GenesisHackathon/actions/runs/44988409768) · [Проверка изоляции](https://github.com/24kBlood/GenesisHackathon/actions/runs/44988409731) · [Перенос и сборка без сети](docs/OFFLINE_RUN.md)
+Изоляция внешнего воркера проверяется отдельным заданием CI с реальным Linux-контейнером. [Результаты офлайн-прогона](https://github.com/24kBlood/GenesisHackathon/actions/workflows/offline-verify.yml?query=branch%3Amain) · [Проверка изоляции](https://github.com/24kBlood/GenesisHackathon/actions/workflows/policy-isolation.yml?query=branch%3Amain) · [Перенос и сборка без сети](docs/OFFLINE_RUN.md)
 
 ### Что показала локальная диагностика
 
