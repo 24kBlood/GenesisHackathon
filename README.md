@@ -22,14 +22,33 @@ cd GenesisHackathon
 
 **Windows PowerShell**
 
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --no-deps -r tests/requirements-schema.lock
-$env:PYTHONPATH = 'src'
-.\.venv\Scripts\python.exe -m genesis.cli demo
-```
+Выполняйте команды в папке `GenesisHackathon`, куда вы клонировали проект. В ней должен быть файл `tests/requirements-schema.lock`.
 
-Если команда `py` недоступна, используйте `python -m venv .venv` с установленным Python 3.11.
+Создайте окружение одной из команд:
+
+| Установленный инструмент | Команда |
+| --- | --- |
+| Python Launcher (`py`) | `py -3.11 -m venv .venv` |
+| Python 3.11 доступен как `python` | `python -m venv .venv` |
+| `uv` | `uv venv --python 3.11 --seed .venv` |
+
+Затем запустите демо:
+
+```powershell
+& {
+    if (-not (Test-Path 'tests/requirements-schema.lock')) {
+        throw 'Open PowerShell in the GenesisHackathon folder.'
+    }
+    $python = '.\.venv\Scripts\python.exe'
+    if (-not (Test-Path $python)) {
+        throw 'Create .venv with Python 3.11 before running the demo.'
+    }
+    & $python -m pip install --no-deps -r tests/requirements-schema.lock
+    if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+    $env:PYTHONPATH = 'src'
+    & $python -m genesis.cli demo
+}
+```
 
 <details>
 <summary>Linux и macOS</summary>
