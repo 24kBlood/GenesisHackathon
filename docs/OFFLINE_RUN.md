@@ -26,10 +26,17 @@ PYTHONPATH=src python -m genesis.cli demo --policy simple_reconciliation --seed 
 
 ## Сборка и перенос
 
-`Dockerfile` и `Dockerfile.policy` фиксируют официальный базовый образ Python 3.11 по digest (`sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535`). При сборке сначала скачиваются зафиксированные wheel-файлы (либо используется локальный каталог через `--build-arg PIP_FIND_LINKS=...` для полностью офлайн-сборки). Финальный образ проверки содержит зависимости, исходники, `LICENSE`, `NOTICE`, `pyproject.toml` и локальные тестовые артефакты. Для переноса уже собранного образа можно использовать `docker save` и `docker load` без скачивания при запуске.
+`Dockerfile` и `Dockerfile.policy` фиксируют официальный базовый образ Python 3.11 по digest. Сборка использует доступ к Docker Hub и реестру Python-пакетов. Финальный образ проверки содержит исходники, зависимости и тестовые артефакты. На машине без сети загрузите заранее собранный образ через `docker load`.
 
 ```sh
 docker build --tag genesis-verify:local .
+docker save --output genesis-verify.tar genesis-verify:local
+```
+
+На машине проверки:
+
+```sh
+docker load --input genesis-verify.tar
 docker run --rm --pull never --network none --cpus 2 --memory 4g --memory-swap 4g \
   --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777 \
   --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \

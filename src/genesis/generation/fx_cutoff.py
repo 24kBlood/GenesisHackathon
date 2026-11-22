@@ -93,14 +93,20 @@ def _fx_mutations(
         if len(rates) != 1:
             continue
         rate = rates[0]
-        correct = convert_minor(payment["amount_minor"], source, target, rate, exponents, rounding)
+        source_amount = payment["amount_minor"]
+        correct = convert_minor(source_amount, source, target, rate, exponents, rounding)
         if correct != debit["debit_minor"]:
             continue
         with localcontext(Context(prec=64)):
             wrong_rate = format(Decimal(rate) * Decimal("1.01"), "f")
-        posted = convert_minor(payment["amount_minor"], source, target, wrong_rate, exponents, rounding)
+        posted = convert_minor(source_amount, source, target, wrong_rate, exponents, rounding)
         if posted == correct:
-            continue
+            # Allow room for rounding when a one-percent change disappears in the ledger.
+            with localcontext(Context(prec=64)):
+                target_amount = Decimal(correct + 2).scaleb(-exponents[target])
+                source_amount_major = Decimal(source_amount).scaleb(-exponents[source])
+                wrong_rate = format(target_amount / source_amount_major, "f")
+            posted = convert_minor(source_amount, source, target, wrong_rate, exponents, rounding)
         documents = (payment["doc_id"], f"fx:{day}:{source}:{target}", "policy")
         if public.policy["fx_date_rule"] == "invoice_date" and invoice is not None:
             documents += (invoice["doc_id"],)

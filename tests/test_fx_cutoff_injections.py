@@ -74,6 +74,19 @@ class FxCutoffInjectionTests(TestCase):
             {(102, 0), (0, 102)},
         )
 
+    def test_fx_injection_when_one_percent_rounds_to_the_original_amount(self):
+        config = {
+            "schema_version": "1.0.0",
+            "base_currency": "EUR",
+            "foreign_currency": "KZT",
+            "fx_date_rule": "invoice_date",
+            "error_counts": {"fx_conversion": 1},
+        }
+        episode = generate_episode(1, config)
+        verify_public_proofs(episode)
+        issue, = episode.evaluator.truth["issues"]
+        self.assertEqual(issue["expected_amount_minor"], 2)
+
     def test_alternative_date_rules_use_public_dates_and_missing_quote_rejects(self):
         for rule, doc_date in (
             ("payment_date", "timestamp"), ("posting_date", "timestamp"), ("invoice_date", "issued_at"),

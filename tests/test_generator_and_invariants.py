@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from collections import Counter, defaultdict
 from datetime import datetime
-from decimal import Decimal, localcontext
+from decimal import Decimal, ROUND_DOWN, localcontext
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -348,6 +348,18 @@ class ConfiguredGeneratorTests(unittest.TestCase):
                             len(set().union(*(set(issue["affected_ids"]) for issue in issues))),
                             sum(len(issue["affected_ids"]) for issue in issues),
                         )
+
+    def test_scaled_foreign_episodes_ignore_the_callers_decimal_context(self):
+        config = {
+            **CLEAN,
+            "obligation_count": 60,
+            "base_currency": "EUR",
+            "foreign_currency": "GBP",
+            "interaction_scenarios": ["duplicate_invoice_with_fx"],
+        }
+        expected = generate_episode(413, config)
+        with localcontext(prec=3, rounding=ROUND_DOWN):
+            self.assertEqual(generate_episode(413, config), expected)
 
     def test_parameterized_scale_currencies_timezones_and_rounding(self):
         cfg = {
