@@ -1,9 +1,10 @@
-"""Verify Genesis, run demos, or score a policy on a public diagnostic profile."""
+"""Verify Genesis, run demos, or score a policy on a public episode."""
 
 import argparse
 import asyncio
 from collections import Counter
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from importlib.metadata import PackageNotFoundError, distribution
 from io import TextIOBase
 from pathlib import Path
 import re
@@ -12,7 +13,21 @@ from time import monotonic, perf_counter
 from unittest import TestLoader, TestResult, TestSuite
 
 
-_REPOSITORY = Path(__file__).resolve().parents[3]
+def _resource_root() -> Path:
+    checkout = Path(__file__).resolve().parents[3]
+    if (checkout / "src" / "genesis" / "__init__.py").is_file():
+        return checkout
+    try:
+        installed = distribution("genesis-fintech-env")
+    except PackageNotFoundError:
+        return checkout
+    for entry in installed.files or ():
+        if entry.parts[-3:] == ("share", "genesis-fintech-env", "pyproject.toml"):
+            return installed.locate_file(entry).resolve().parent
+    return checkout
+
+
+_REPOSITORY = _resource_root()
 _REQUIRED_MODULES = {
     "test_env_contract_and_isolation", "test_public_datasets", "test_trajectories",
     "test_reproducibility_and_permutation",
@@ -381,7 +396,7 @@ def demo(*, policy="simple_reconciliation", seed=20260304):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Verify Genesis, run demos, or score a policy on a public diagnostic profile.")
+    parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
 
     verify_parser = commands.add_parser("verify", help="run local regression and diagnostic checks")
@@ -393,8 +408,8 @@ def main(argv=None):
     demo_parser.add_argument("--policy", choices=_DEMO_POLICIES, default="simple_reconciliation")
     demo_parser.add_argument("--seed", type=int, default=20260304)
 
-    runner = commands.add_parser("run-policy", help="score a closed run on one public diagnostic profile")
-    runner.add_argument("profile")
+    runner = commands.add_parser("run-policy", help="score a closed run on a diagnostic profile or train/dev episode")
+    runner.add_argument("profile", help="diagnostic profile name or public episode ID")
     source = runner.add_mutually_exclusive_group(required=True)
     source.add_argument("--policy", choices=("random", "simple_reconciliation", "mark_all"))
     source.add_argument("--image", help="local Docker policy image")

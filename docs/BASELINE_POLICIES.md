@@ -31,6 +31,12 @@ PYTHONPATH=src python -m genesis.cli run-policy standard-03 --image genesis-poli
 
 В PowerShell задайте `$env:PYTHONPATH = 'src'` перед запуском Python. Команда выводит итоговые метрики в терминал координатора после подтверждённого удаления контейнера. Параметр `--trace` сохраняет публичные действия и наблюдения в новый файл. Для запуска той же встроенной политики внутри Python используйте `--policy simple_reconciliation` вместо `--image genesis-policy:local`.
 
+Можно указать `episode_id` из [индекса набора](../data/checksums.json) для прогона на конкретном train- или dev-эпизоде. Команда воспроизведёт его из опубликованных настроек и оценит результат в режиме `eval`.
+
+```sh
+PYTHONPATH=src python -m genesis.cli run-policy episode-1c5f979080b0fb56fda354e3 --policy simple_reconciliation
+```
+
 ## Локальная диагностика (80 запусков на 20 профилях)
 
 Из корня репозитория:

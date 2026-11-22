@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager, redirect_stdout
 from io import StringIO
+import json
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -257,6 +258,21 @@ class CliVerifyTests(unittest.TestCase):
         self.assertEqual(parsed_args.profile, "standard-03")
         self.assertEqual(parsed_args.image, "genesis-policy:ci")
         self.assertEqual((parsed_args.cpus, parsed_args.memory_mib, parsed_args.tmpfs_mib), (2, 1024, 64))
+
+    def test_run_policy_accepts_published_train_and_dev_episode_ids(self):
+        checksums_path = _ROOT / "data" / "checksums.json"
+        episodes = json.loads(checksums_path.read_text(encoding="utf-8"))["episodes"]
+        for split in ("train", "dev"):
+            episode_id = next(row["episode_id"] for row in episodes if row["split"] == split)
+            with self.subTest(split=split):
+                out = StringIO()
+                with redirect_stdout(out):
+                    code = cli_main.main(["run-policy", episode_id, "--policy", "simple_reconciliation"])
+                self.assertEqual(code, 0, out.getvalue())
+                result = json.loads(out.getvalue())
+                self.assertEqual(result["profile"], episode_id)
+                self.assertTrue(result["terminated"])
+                self.assertIsNone(result["transport_error"])
 
     def test_demo_subcommand_runs_all_four_policies_end_to_end(self):
         for policy in ("simple_reconciliation", "random", "mark_all", "oracle"):

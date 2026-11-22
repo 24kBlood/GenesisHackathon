@@ -1,4 +1,4 @@
-"""Run a public diagnostic profile with a baseline or a local policy image."""
+"""Run a public episode with a baseline or a local policy image."""
 
 import asyncio
 import json
@@ -6,20 +6,33 @@ from time import monotonic
 
 from genesis.environment.docker_policy import DockerPolicy, PolicyCleanupError
 from genesis.environment.jsonl import TransportError
-from genesis.evaluation.benchmark import LocalPolicyRunner
+from genesis.evaluation.benchmark import BenchmarkEpisode, LocalPolicyRunner
 from genesis.evaluation.judge import run_episode
 from genesis.evaluation.reproducibility import _diagnostics, _env, load_profiles
+from genesis.generation.company import generate_episode
+from genesis.generation.datasets import load_dataset_entries
 from genesis.policies import make_policy
 from genesis.trajectories import TrajectoryRecorder
 
 
+def _resolve_profile(root, name):
+    if name.startswith("episode-"):
+        for entry in load_dataset_entries(root / "data" / "configs"):
+            episode = generate_episode(entry.seed, entry.config)
+            if episode.public.manifest["episode_id"] == name:
+                return BenchmarkEpisode(name, entry.seed, entry.config)
+        raise ValueError(f"unknown public train/dev episode: {name}")
+
+    profiles = load_profiles(root / "benchmarks" / "local_eval_profiles.json")
+    for profile in profiles:
+        if profile.name == name:
+            return profile
+    raise ValueError("unknown profile. Available: " + ", ".join(profile.name for profile in profiles))
+
+
 def run_policy(root, args):
     try:
-        profiles = load_profiles(root / "benchmarks" / "local_eval_profiles.json")
-        profile = next((profile for profile in profiles if profile.name == args.profile), None)
-        if profile is None:
-            print("Unknown profile. Available:", ", ".join(profile.name for profile in profiles))
-            return 1
+        profile = _resolve_profile(root, args.profile)
         if args.image:
             runner = DockerPolicy(args.image, cpus=args.cpus, memory_mib=args.memory_mib, tmpfs_mib=args.tmpfs_mib)
         else:

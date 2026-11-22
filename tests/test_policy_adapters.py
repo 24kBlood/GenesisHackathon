@@ -12,6 +12,7 @@ from copy import deepcopy
 from pathlib import Path
 from time import perf_counter
 
+import genesis
 import test_env_contract_and_isolation as contract
 from genesis.environment.auditor_env import AuditorEnv
 from genesis.environment.docker_policy import _host_environment
@@ -169,7 +170,7 @@ class PolicyAdaptersTests(unittest.IsolatedAsyncioTestCase):
             make_policy("oracle")
 
     async def test_jsonl_worker_runs_with_only_public_modules_staged(self):
-        source = contract.ROOT / "src" / "genesis"
+        source = Path(genesis.__file__).resolve().parent
         with tempfile.TemporaryDirectory() as directory:
             package = Path(directory) / "genesis"
             package.mkdir()
