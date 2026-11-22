@@ -6,6 +6,8 @@ from decimal import Context, Decimal, ROUND_HALF_EVEN, localcontext
 from functools import partial
 from hashlib import sha256
 from random import Random
+import re
+from secrets import randbits, token_hex
 from typing import Any, Literal, Mapping, NotRequired, TypedDict
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -139,7 +141,7 @@ def _generation_config(config: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError(f"configuration requires schema_version {SCHEMA_VERSION}")
     unexpected = config.keys() - {
         "schema_version", "error_counts", "interaction_scenarios", "include_distractors",
-        "obligation_count", "base_currency", "foreign_currency", "timezone", "fx_date_rule",
+        "obligation_count", "base_currency", "foreign_currency", "timezone", "fx_date_rule", "episode_id",
     }
     if unexpected:
         raise ValueError("unknown generation configuration fields")
@@ -184,6 +186,11 @@ def _generation_config(config: Mapping[str, Any]) -> dict[str, Any]:
     if interactions and fx_date_rule != "payment_date":
         raise ValueError("interaction_scenarios require fx_date_rule='payment_date'")
     result: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "error_counts": normalized}
+    if "episode_id" in config:
+        episode_id = config["episode_id"]
+        if type(episode_id) is not str or re.fullmatch(r"episode-(?:[0-9a-f]{24}|[0-9a-f]{32})", episode_id) is None:
+            raise ValueError("episode_id must have an episode- prefix and 24 or 32 lowercase hex digits")
+        result["episode_id"] = episode_id
     if distractors:
         result["include_distractors"] = True
     if interactions:
@@ -408,6 +415,23 @@ def _post(
         })
 
 
+def new_closed_case(config: Mapping[str, Any]) -> tuple[int, dict[str, Any]]:
+    """Create independent identifiers for a new case in the trusted coordinator."""
+    prepared = _generation_config(config)
+    prepared["episode_id"] = "episode-" + token_hex(16)
+    return (1 << 128) | randbits(128), prepared
+
+
+def generate_closed_episode(seed: int, config: Mapping[str, Any]) -> Episode:
+    """Generate or replay a case provisioned by new_closed_case."""
+    if type(seed) is not int or seed < (1 << 128):
+        raise ValueError("closed generation requires a private random seed from new_closed_case")
+    normalized = _generation_config(config)
+    if re.fullmatch(r"episode-[0-9a-f]{32}", normalized.get("episode_id", "")) is None:
+        raise ValueError("closed generation requires an independent 128-bit episode_id")
+    return generate_episode(seed, normalized)
+
+
 def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
     """Generate one episode from a v1 configuration and a supplied seed.
 
@@ -417,6 +441,7 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
     Foreign accrual and payment use equal spot quotes, so the clean history
     books no FX gain or loss. Opening bank equity has no references and carries
     a positive working-capital buffer so cash stays non-negative after FX errors.
+    Legacy public examples may omit episode_id. Use generate_closed_episode for hidden cases.
     """
     if type(seed) is not int:
         raise ValueError("seed must be an integer")
@@ -464,7 +489,8 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
     if distractors is not None:
         opening_balance += distractors.opening_cash
     ids = _Ids(seed)
-    episode_id = ids.new("episode")
+    legacy_episode_id = ids.new("episode")
+    episode_id = normalized_config.get("episode_id", legacy_episode_id)
     ledger: list[LedgerRow] = []
     invoices: list[Invoice] = []
     payments: list[Payment] = []

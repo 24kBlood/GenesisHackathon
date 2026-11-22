@@ -1,16 +1,16 @@
 # Genesis FinTech · проверка для жюри
 
-Проверенная версия реализации — [5f5d681](https://github.com/24kBlood/GenesisHackathon/commit/5f5d6816ade3122f789c3b76170dcb1ba0a2604e), включая [исправления независимого аудита](https://github.com/24kBlood/GenesisHackathon/pull/60). По этому коммиту можно повторить результаты ниже. Официальная оценка проводится отдельно на закрытых эпизодах организаторов.
+Исторический прогон ниже привязан к коммиту [5f5d681](https://github.com/24kBlood/GenesisHackathon/commit/5f5d6816ade3122f789c3b76170dcb1ba0a2604e). Первая версия этой страницы вошла в [9b620fc](https://github.com/24kBlood/GenesisHackathon/commit/9b620fc20f6bf4d0ce3ce1e8adfbe398d2d3cccd). Команда ниже проверяет текущий `main`. Официальная оценка проводится отдельно на закрытых эпизодах организаторов.
 
 ## Запустить проверку
 
 Если установлены Git и uv, выполните команду из любой папки в PowerShell или Bash. Для первоначальной загрузки пакета и зависимостей нужен интернет.
 
 ```sh
-uvx --python 3.11 --from 'genesis-fintech-env[verify] @ git+https://github.com/24kBlood/GenesisHackathon.git@5f5d6816ade3122f789c3b76170dcb1ba0a2604e' genesis verify --all
+uvx --python 3.11 --from 'genesis-fintech-env[verify] @ git+https://github.com/24kBlood/GenesisHackathon.git@main' genesis verify --all
 ```
 
-Для воспроизведения офлайн-прогона соберите образ из клона на указанном SHA или перенесите заранее собранный образ. Запуск проходит без сети, с 2 CPU и 4 ГиБ RAM. [Сборка, перенос и точная команда Docker](../../docs/OFFLINE_RUN.md) · [Журнал офлайн-проверки](https://github.com/24kBlood/GenesisHackathon/actions/runs/44991344209)
+Для воспроизведения чисел ниже соберите образ из клона на `5f5d681` или перенесите заранее собранный образ. Запуск проходит без сети, с 2 CPU и 4 ГиБ RAM. Скрытые эпизоды готовятся через отдельный вход координатора. [Офлайн-запуск](../../docs/OFFLINE_RUN.md) · [Закрытый прогон](../../docs/ISOLATION_AND_LEAKAGE.md#создание-закрытого-эпизода) · [Журнал](https://github.com/24kBlood/GenesisHackathon/actions/runs/44991344209)
 
 Для проверки отдельных артефактов используйте Python 3.11 и [зависимости из lock-файла](../../tests/requirements-schema.lock). Команды ниже выполняются из корня клона. В PowerShell сначала задайте `$env:PYTHONPATH = 'src'`, затем запустите команды без префикса `PYTHONPATH=src`.
 
@@ -29,7 +29,7 @@ PYTHONPATH=src python -m genesis.evaluation.reproducibility benchmark --profiles
 | Данные и эталон · 25 | [Генератор](../../src/genesis/generation/), [train и dev](../../data/), [сверка доказательств](../../src/genesis/evaluation/public_proofs.py) | 10 train и 10 dev побайтно воспроизводятся. Для всех 20 книг тесты сверяют публичные доказательства и ссылки. Четыре книги попадают в рекомендованный ТЗ диапазон размеров. [Тесты данных и схем](https://github.com/24kBlood/GenesisHackathon/actions/runs/44991344097) |
 | Надёжность награды · 25 | [Матрица E01–E20](../../tests/test_evaluation_matrix.py), [формула и сопоставление](../../docs/REWARD_AND_MATCHING.md) | Локальная матрица прошла 20 из 20. Прогон проверяет чистые случаи, ложные выводы, повторы и стоимость исследования. |
 | Воспроизводимость и обобщение · 15 | [Профили](../../benchmarks/local_eval_profiles.json), [проверки повторов и замен ID](../../tests/test_reproducibility_and_permutation.py) | 20 из 20 локальных повторов и 20 из 20 пар с перестановкой записей и заменой ID. В парных проверках участвуют Oracle и простая сверка. |
-| Инженерия и объяснение · 10 | [Запуск](../../README.md#быстрый-старт), [записка о дизайне](../../docs/DESIGN_NOTE.md), [ограничения](../../docs/LIMITATIONS.md) | 187 локальных тестов, два дополнительных теста с реальным Docker в Linux CI. Проверочный образ на этом SHA занимал 50 834 881 байт по метрике Docker Engine. При повреждённом диагностическом JSON команда завершилась кодом 1. [Журнал](https://github.com/24kBlood/GenesisHackathon/actions/runs/44991344209) |
+| Инженерия и объяснение · 10 | [Запуск](../../README.md#быстрый-старт), [записка о дизайне](../../docs/DESIGN_NOTE.md), [ограничения](../../docs/LIMITATIONS.md) | На `5f5d681` локально обнаружено 189 тестов, 187 прошли и 2 Docker-теста пропущены. Оба прошли в Linux CI. Образ офлайн-проверки занимал 50 834 881 байт по метрике Docker Engine. Повреждённый диагностический JSON дал код выхода 1. [Журнал](https://github.com/24kBlood/GenesisHackathon/actions/runs/44991344209) |
 
 Числа в первом столбце — максимумы из ТЗ. Приведённые прогоны показывают результаты на открытых примерах, оценки закрытого набора здесь нет.
 

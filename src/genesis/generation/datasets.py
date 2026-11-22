@@ -76,7 +76,7 @@ def load_dataset_entries(config_dir: Path | str) -> tuple[DatasetEntry, ...]:
                 raise ValueError(f"{label}: {error}") from None
             if config != row["config"]:
                 raise ValueError(f"{label}: use a normalized configuration")
-            canonical = _json_line(config)
+            canonical = _json_line(_without(config, "episode_id"))
             if config_splits.get(canonical, split) != split:
                 raise ValueError(f"{label}: configuration is already in the other split")
             config_splits[canonical] = split

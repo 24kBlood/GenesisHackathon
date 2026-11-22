@@ -2,6 +2,24 @@
 
 Доверенный координатор вызывает `reset(seed, config)`, выбирает эпизод и хранит терминальный отчёт. Внешняя политика работает в отдельном контейнере. Она читает опубликованные данные через ответы разрешённых инструментов и передаёт действие через stdout. Oracle, эталон, provenance, seed и внутренние ошибки остаются у оценщика. Подробности разделения описаны в [ADR 0002](ADR/0002-evaluator-isolation.md).
 
+## Создание закрытого эпизода
+
+Для скрытой оценки координатор создаёт закрытый seed и публичный `episode_id` двумя независимыми криптографическими вызовами. `closed_environment` требует явный 128-битный ID и проверяет формат seed, который возвращает `new_closed_case`. Числовая проверка отсеивает короткие seed, а энтропию обеспечивает случайная генерация в координаторе.
+
+```python
+from genesis.environment.docker_policy import DockerPolicy
+from genesis.evaluation.judge import closed_environment, run_episode
+from genesis.generation import new_closed_case
+
+seed, config = new_closed_case({"schema_version": "1.0.0", "error_counts": {"fx_conversion": 1}})
+# Сохраните seed и config в закрытой части координатора для точного повтора.
+result = await run_episode(
+    closed_environment(), seed=seed, config=config, runner=DockerPolicy("genesis-policy:local"),
+)
+```
+
+Команды `demo` и `run-policy` работают с открытыми примерами. Их старые значения seed и идентификаторы сохранены для воспроизводимости.
+
 ## Протокол
 
 Координатор отправляет кадр `{"type":"reset","observation":...,"info":{}}`. Затем работник отправляет один объект действия и ждёт кадр `{"type":"step","observation":...,"reward":0,"terminated":false,"truncated":false,"info":{}}`. У действий нет диалога сброса. Валидное JSON-сообщение с неизвестным действием или неверными аргументами обрабатывает среда. Неизвестный ID получает публичную ошибку.
