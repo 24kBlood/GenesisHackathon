@@ -14,6 +14,7 @@ from .reward import TerminalScore, score_terminal
 class TerminalEvaluation:
     matching: MatchResult
     score: TerminalScore
+    validation_error: str | None = None
 
 
 class EpisodeEvaluator:
@@ -31,7 +32,12 @@ class EpisodeEvaluator:
         self._tolerances_minor = dict(tolerances_minor or {})
 
     def __call__(
-        self, submission: FindingsSubmission, inspection_steps: int, *, invalid_submission: bool,
+        self,
+        submission: FindingsSubmission,
+        inspection_steps: int,
+        *,
+        invalid_submission: bool,
+        validation_error: str | None = None,
     ) -> TerminalEvaluation:
         findings = [] if invalid_submission else submission["findings"]
         matching = match(
@@ -42,4 +48,4 @@ class EpisodeEvaluator:
             matching.tp, matching.fp, matching.fn, inspection_steps,
             invalid_submission=invalid_submission,
         )
-        return TerminalEvaluation(matching, score)
+        return TerminalEvaluation(matching, score, validation_error=validation_error)

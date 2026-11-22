@@ -60,8 +60,8 @@ async def run_episode(
                         "terminated": terminated, "truncated": truncated, "info": {},
                     }, deadline)
                 except TransportError as error:
-                    # The worker may exit immediately after submitting a complete answer.
-                    if not terminated or error.code not in (TransportCode.EOF, TransportCode.TIMEOUT):
+                    # The worker may exit immediately after submitting or reaching the step limit.
+                    if not (terminated or truncated) or error.code not in (TransportCode.EOF, TransportCode.TIMEOUT):
                         raise
                 finally:
                     if consumed and on_step is not None:

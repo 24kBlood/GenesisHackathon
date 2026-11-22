@@ -58,17 +58,22 @@ def _finite_float(value: str) -> float:
     return result
 
 
-def _validate_unicode(value: object) -> None:
-    """Reject non-scalar Unicode in both JSON keys and string values."""
-    if isinstance(value, str):
-        value.encode("utf-8")
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            _validate_unicode(key)
-            _validate_unicode(item)
-    elif isinstance(value, list):
-        for item in value:
-            _validate_unicode(item)
+def _reject_surrogates(value: object) -> object:
+    """Reject lone UTF-16 surrogate code points (U+D800–U+DFFF) anywhere in decoded JSON."""
+    stack: list[object] = [value]
+    while stack:
+        current = stack.pop()
+        if type(current) is str:
+            try:
+                current.encode("utf-8")
+            except UnicodeEncodeError:
+                raise ValueError("lone UTF-16 surrogate in JSON string") from None
+        elif type(current) is dict:
+            stack.extend(current.keys())
+            stack.extend(current.values())
+        elif type(current) is list:
+            stack.extend(current)
+    return value
 
 
 class JsonlProcess:
@@ -105,12 +110,10 @@ class JsonlProcess:
         if len(frame) > FRAME_BYTES:
             raise TransportError(TransportCode.FRAME_LIMIT)
         try:
-            value = json.loads(
+            return _reject_surrogates(json.loads(
                 frame.decode("utf-8"), object_pairs_hook=_object,
                 parse_constant=_invalid_constant, parse_float=_finite_float,
-            )
-            _validate_unicode(value)
-            return value
+            ))
         except (ValueError, RecursionError):
             raise TransportError(TransportCode.BAD_FRAME) from None
 

@@ -66,6 +66,8 @@ def export_episode(episode: Episode, directory: Path | str) -> None:
             destination = staged / projection
             private = projection == "evaluator-only"
             destination.mkdir(mode=0o700 if private else 0o755)
+            if private:
+                destination.chmod(0o700)
             for name, contents in documents.items():
                 path = destination / name
                 path.write_bytes(contents)

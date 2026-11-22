@@ -3,7 +3,7 @@ import unittest
 from copy import deepcopy
 from dataclasses import replace
 
-from genesis.environment.auditor_env import AuditorEnv, Episode, ToolCode, ToolError
+from genesis.environment.auditor_env import AuditorEnv, Episode, ToolCode, ToolError, _project_record
 from genesis.evaluation.matcher import match
 from genesis.evaluation.reward import score_terminal
 
@@ -132,11 +132,16 @@ class LifecycleTests(unittest.TestCase):
         ]
         baseline = self.fixture.findings["findings"][0]
         for changes in (
-            {"type": "unknown"}, {"affected_ids": []}, {"claimed_amount_minor": True},
-            {"claimed_amount_minor": 10000.0}, {"currency": "usd"},
-            {"evidence_ids": ["id"] * 11}, {"explanation": "я" * 1001},
-            {"affected_ids": [chr(0xD800)]}, {"evidence_ids": [chr(0xDFFF)]},
-            {"explanation": chr(0xD800)},
+            {"type": "unknown"}, {"affected_ids": []},
+            {"affected_ids": [f"id-{i}" for i in range(65)]},
+            {"affected_ids": ["dup", "dup"]},
+            {"affected_ids": ["a" * 129]},
+            {"affected_ids": [chr(0xD800)]},
+            {"claimed_amount_minor": True}, {"claimed_amount_minor": 10000.0},
+            {"claimed_amount_minor": -1}, {"claimed_amount_minor": 10**18 + 1},
+            {"currency": "usd"}, {"evidence_ids": ["id"] * 11},
+            {"evidence_ids": ["b" * 129]}, {"evidence_ids": [chr(0xDFFF)]},
+            {"explanation": "я" * 1001}, {"explanation": "bad" + chr(0xD800) + "text"},
             {"extra": "private"},
         ):
             bad_findings.append({**self.fixture.findings, "findings": [{**baseline, **changes}]})
@@ -146,10 +151,68 @@ class LifecycleTests(unittest.TestCase):
                 env.reset(121, {"clean": True})
                 self.assertEqual(self.step(env, self.submit(payload))[1:], (-1, True, False))
                 self.assertTrue(env.terminal_result.invalid_submission)
+                self.assertIsInstance(env.terminal_result.validation_error, str)
+                self.assertTrue(env.terminal_result.validation_error)
                 self.assertEqual(env.terminal_result.score.metrics.f1, 0)
                 self.assertEqual(env.terminal_result.submission["findings"], [])
                 self.assertEqual(self.step(env, self.submit())[1:], (0, True, False))
         self.assertEqual(len(self.scored), len(bad_findings))
+
+    def test_validation_error_never_leaks_and_env_boundary_guards(self):
+        # Valid submit leaves validation_error=None; malformed submit logs error privately.
+        env = self.make_env(mode="eval")
+        ack = self.step(env, self.submit({"episode_id": "wrong", "findings": []}))
+        self.assertEqual(ack, ({"remaining_steps": 99, "status": "submitted"}, 0.0, True, False))
+        self.assertTrue(env.terminal_result.invalid_submission)
+        self.assertIn("episode_id", env.terminal_result.validation_error)
+        env.reset(121, {})
+        self.step(env, self.submit())
+        self.assertIsNone(env.terminal_result.validation_error)
+
+        # Reject bool timeout_seconds.
+        for bad_timeout in (True, False, 0, -5.0, float("inf"), float("nan")):
+            with self.subTest(bad_timeout=bad_timeout), self.assertRaises(ValueError):
+                AuditorEnv(self.factory, timeout_seconds=bad_timeout)
+
+        # Reject surrogates in tool actions.
+        env.reset(121, {})
+        self.assertEqual(
+            self.step(env, {"type": "calculator", "expression": "\ud800"})[0]["error"],
+            {"code": "invalid_argument"},
+        )
+        self.assertEqual(
+            self.step(env, {"type": "get_document", "doc_id": "\ud800"})[0]["error"],
+            {"code": "invalid_argument"},
+        )
+
+        # Timeout resets stale last_action_failed.
+        self.assertTrue(env.last_action_failed)
+        self.clock.now = 60.0
+        self.step(env, {"type": "calculator", "expression": "1+1"})
+        self.assertFalse(env.last_action_failed)
+        self.clock.now = 0.0
+
+        # _project_record raises ValueError (never StopIteration) on unknown dicts.
+        with self.assertRaises(ValueError):
+            _project_record({})
+
+        # reset() rejects negative counts, invalid/empty currency_exponents, and bogus policy fields.
+        for bad_manifest, bad_policy in (
+            ({**self.fixture.manifest, "document_count": -1}, self.fixture.policy),
+            ({**self.fixture.manifest, "record_counts": {**self.fixture.manifest["record_counts"], "ledger": -1}}, self.fixture.policy),
+            ({**self.fixture.manifest, "currency_exponents": {}}, self.fixture.policy),
+            ({**self.fixture.manifest, "currency_exponents": {"usd": 2}}, self.fixture.policy),
+            ({**self.fixture.manifest, "currency_exponents": {"KZT": -1}}, self.fixture.policy),
+            (self.fixture.manifest, {**self.fixture.policy, "fx_date_rule": "bogus"}),
+            (self.fixture.manifest, {**self.fixture.policy, "rounding_mode": "BOGUS"}),
+            (self.fixture.manifest, {**self.fixture.policy, "timezone": ""}),
+        ):
+            with self.subTest(bad_manifest=bad_manifest, bad_policy=bad_policy), self.assertRaises(ValueError):
+                bad_env = AuditorEnv(
+                    lambda seed, cfg: replace(self.factory(seed, cfg), manifest=bad_manifest, policy=bad_policy),
+                    clock=self.clock,
+                )
+                bad_env.reset(121, {})
 
     def test_eval_acknowledgement_precedes_scoring_and_keeps_private_result(self):
         env = self.make_env(mode="eval")

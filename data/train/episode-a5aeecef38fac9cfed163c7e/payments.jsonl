@@ -1,3 +1,3 @@
-{"amount_minor":9200,"currency":"KZT","doc_id":"doc-3e6c101b3b53f4771801b990","invoice_refs":["invoice-d3101812c41489c9f0e27290"],"payment_id":"payment-0363069e50572cefdd5b6ce8","timestamp":"2026-08-10T10:00:00+05:00"}
-{"amount_minor":3000,"currency":"KZT","doc_id":"doc-b3f3947dfde7b14ae818aa4a","invoice_refs":["invoice-ba70da4510da80ed45e93983"],"payment_id":"payment-1b209bcd3bdce34ce6657647","timestamp":"2026-08-06T10:00:00+05:00"}
-{"amount_minor":3600,"currency":"JPY","doc_id":"doc-756522e406b1a85d61667811","invoice_refs":["invoice-673b1d6daa1315a854f8004f"],"payment_id":"payment-142b2544cfa5d01b34e99f6a","timestamp":"2026-08-08T10:00:00+05:00"}
+{"amount_minor":9200,"currency":"USD","doc_id":"doc-3e6c101b3b53f4771801b990","invoice_refs":["invoice-d3101812c41489c9f0e27290"],"payment_id":"payment-0363069e50572cefdd5b6ce8","timestamp":"2026-08-10T10:00:00-04:00"}
+{"amount_minor":3000,"currency":"USD","doc_id":"doc-b3f3947dfde7b14ae818aa4a","invoice_refs":["invoice-ba70da4510da80ed45e93983"],"payment_id":"payment-1b209bcd3bdce34ce6657647","timestamp":"2026-08-06T10:00:00-04:00"}
+{"amount_minor":3600,"currency":"EUR","doc_id":"doc-756522e406b1a85d61667811","invoice_refs":["invoice-673b1d6daa1315a854f8004f"],"payment_id":"payment-142b2544cfa5d01b34e99f6a","timestamp":"2026-08-08T10:00:00-04:00"}

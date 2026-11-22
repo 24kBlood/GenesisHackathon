@@ -1,15 +1,22 @@
 FROM docker.io/library/python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS dependencies
 
+ARG PIP_FIND_LINKS=""
 COPY tests/requirements-schema.lock /build/requirements.lock
-RUN python -m pip download --only-binary=:all: --no-deps --dest /wheels -r /build/requirements.lock \
-    && python -m pip install --no-index --find-links=/wheels --no-deps \
-       --target=/offline-deps -r /build/requirements.lock
+RUN if [ -n "${PIP_FIND_LINKS}" ]; then \
+      python -m pip install --no-index --find-links="${PIP_FIND_LINKS}" --no-deps \
+        --target=/offline-deps -r /build/requirements.lock; \
+    else \
+      python -m pip download --only-binary=:all: --no-deps --dest /wheels -r /build/requirements.lock \
+      && python -m pip install --no-index --find-links=/wheels --no-deps \
+         --target=/offline-deps -r /build/requirements.lock; \
+    fi
 
 FROM docker.io/library/python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
 
 WORKDIR /app
 COPY --from=dependencies /offline-deps /usr/local/lib/python3.11/site-packages/
 RUN python -m pip check
+COPY LICENSE NOTICE pyproject.toml ./
 COPY src/ src/
 COPY schemas/ schemas/
 COPY tests/ tests/

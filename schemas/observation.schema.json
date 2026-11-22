@@ -2,23 +2,29 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.genesis.invalid/v1/observation.schema.json",
   "title": "Public auditor observation",
+  "description": "Allowlisted public observation returned by AuditorEnv on reset or step.",
   "type": "object",
   "properties": {
     "remaining_steps": {
+      "description": "Remaining action budget in the current episode (0..100).",
       "type": "integer",
       "minimum": 0,
       "maximum": 100
     },
     "task": {
+      "description": "Initial audit task prompt returned on reset.",
       "type": "string"
     },
     "manifest": {
-      "$ref": "manifest.schema.json"
+      "$ref": "manifest.schema.json",
+      "description": "Public episode manifest returned on reset."
     },
     "policy": {
-      "$ref": "policy.schema.json"
+      "$ref": "policy.schema.json",
+      "description": "Public accounting policy returned on reset."
     },
     "records": {
+      "description": "Up to 50 public records returned by list_records.",
       "type": "array",
       "items": {
         "anyOf": [
@@ -39,6 +45,7 @@
       "maxItems": 50
     },
     "cursor": {
+      "description": "Opaque episode- and table-scoped pagination cursor, or null at end of table.",
       "anyOf": [
         {
           "$ref": "common.schema.json#/$defs/id"
@@ -49,6 +56,7 @@
       ]
     },
     "record": {
+      "description": "Single public record returned by get_record.",
       "anyOf": [
         {
           "$ref": "ledger-row.schema.json"
@@ -65,6 +73,7 @@
       ]
     },
     "document": {
+      "description": "Single public document (invoice, payment, or policy) returned by get_document.",
       "anyOf": [
         {
           "$ref": "invoice.schema.json"
@@ -78,14 +87,25 @@
       ]
     },
     "result": {
+      "description": "Fixed-point decimal string returned by calculator.",
       "type": "string"
     },
     "error": {
+      "description": "Bounded public error code returned for invalid actions or tool failures.",
       "type": "object",
       "properties": {
         "code": {
-          "type": "string",
-          "minLength": 1
+          "description": "Closed enum of public tool and action error codes.",
+          "enum": [
+            "invalid_action",
+            "tool_error",
+            "not_found",
+            "invalid_cursor",
+            "invalid_argument",
+            "invalid_expression",
+            "division_by_zero",
+            "calculation_limit"
+          ]
         }
       },
       "required": [
@@ -94,6 +114,7 @@
       "additionalProperties": false
     },
     "status": {
+      "description": "Terminal status returned when the episode ends.",
       "enum": [
         "submitted",
         "truncated"

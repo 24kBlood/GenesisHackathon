@@ -22,6 +22,17 @@ from genesis.environment.jsonl import FRAME_BYTES
 _TOOLS = {"list_records", "get_record", "get_document", "calculator"}
 _PAYLOADS = ("records", "record", "document", "result", "error", "status")
 _ERROR_CODES = {"invalid_action", "tool_error", *(value.value for value in ToolCode)}
+_TOOL_ERROR_CODES = {
+    "list_records": frozenset({ToolCode.INVALID_CURSOR.value, "tool_error"}),
+    "get_record": frozenset({ToolCode.NOT_FOUND.value, "tool_error"}),
+    "get_document": frozenset({ToolCode.NOT_FOUND.value, "tool_error"}),
+    "calculator": frozenset({
+        ToolCode.INVALID_EXPRESSION.value,
+        ToolCode.DIVISION_BY_ZERO.value,
+        ToolCode.CALCULATION_LIMIT.value,
+        "tool_error",
+    }),
+}
 _PRIVATE_FIELDS = {
     "seed", "truth", "provenance", "initial_history", "changes", "issues",
     "expected_amount_minor", "acceptable_evidence_sets", "info", "stderr", "traceback",
@@ -76,20 +87,26 @@ def _project_observation(source: Mapping[str, object]) -> dict[str, object]:
     return observation
 
 
-def _project_action(action: object, episode_id: str, observation: Mapping[str, object]) -> dict:
-    if type(action) is not dict or "error" in observation:
+def _project_action(
+    action: object, episode_id: str, observation: Mapping[str, object], *, mode: Mode = "eval",
+) -> dict:
+    if type(action) is not dict:
         return _INVALID.copy()
+    error = observation.get("error")
+    error_code = error.get("code") if isinstance(error, Mapping) else None
     kind = action.get("type")
     if kind == "submit":
-        payload = _validated_submission(action, episode_id)
-        if payload is not None:
-            # Free-text explanations never affect matching. Keep only the
-            # public structured claim when producing an export.
-            for finding in payload["findings"]:
-                finding["explanation"] = ""
-            return {"type": "submit", "findings": payload}
+        if error_code is None:
+            payload = _validated_submission(action, episode_id)
+            if payload is not None:
+                if mode == "eval":
+                    # Closed eval exports blank free-text explanations; open train mode preserves them.
+                    for finding in payload["findings"]:
+                        finding["explanation"] = ""
+                return {"type": "submit", "findings": payload}
     elif type(kind) is str and kind in _TOOLS and _valid_tool_action(action, kind):
-        return deepcopy(action)
+        if error_code is None or error_code in _TOOL_ERROR_CODES[kind]:
+            return deepcopy(action)
     return _INVALID.copy()
 
 
@@ -128,6 +145,8 @@ def validate_trajectory(
     step = 0
     finished = False
     for row in records:
+        if not isinstance(row, Mapping):
+            raise ValueError("invalid trajectory row")
         _reject_private(row)
         if row.keys() != _FIELDS:
             raise ValueError("invalid trajectory fields")
@@ -151,7 +170,7 @@ def validate_trajectory(
         ):
             raise ValueError("invalid trajectory observation")
         action = row["action"]
-        if action != _project_action(action, episode_id, observation):
+        if action != _project_action(action, episode_id, observation, mode=mode):
             raise ValueError("invalid trajectory action")
         terminated, truncated, reward = row["terminated"], row["truncated"], row["reward"]
         if (
@@ -170,8 +189,15 @@ def validate_trajectory(
         kind = action["type"]
         if (kind == "submit" and not terminated) or (terminated and kind not in ("submit", "invalid")):
             raise ValueError("trajectory submission disagrees with terminal flags")
-        if not finished and ("error" if kind == "invalid" else _RESULT_KEYS[kind]) not in observation:
-            raise ValueError("trajectory action disagrees with the observation")
+        if not finished:
+            if kind == "invalid":
+                if "error" not in observation:
+                    raise ValueError("trajectory action disagrees with the observation")
+            else:
+                error = observation.get("error")
+                error_code = error.get("code") if isinstance(error, Mapping) else None
+                if _RESULT_KEYS[kind] not in observation and error_code not in _TOOL_ERROR_CODES[kind]:
+                    raise ValueError("trajectory action disagrees with the observation")
         _encode(row)
         if validate_shape is not None:
             validate_shape(row)
@@ -198,7 +224,7 @@ class TrajectoryRecorder:
         public = _project_observation(observation)
         self._records.append({
             "episode_id": episode_id, "step": step,
-            "action": _project_action(action, episode_id, public),
+            "action": _project_action(action, episode_id, public, mode=self._mode),
             "observation": public, "reward": reward if self._mode == "train" else 0.0,
             "terminated": terminated, "truncated": truncated,
         })

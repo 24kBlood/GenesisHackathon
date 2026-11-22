@@ -21,12 +21,23 @@ from .jsonl import FRAME_BYTES
 
 
 MAX_STEPS = 100
+MAX_ID_LENGTH = 128
+MAX_AFFECTED_IDS = 64
+MAX_EVIDENCE_IDS = 10
+MAX_FINDINGS = 30
+MAX_EXPLANATION_LENGTH = 1000
+MAX_CLAIMED_AMOUNT_MINOR = 10**18
 _TABLES = ("ledger", "invoices", "payments", "fx")
 _FINDING_TYPES = {kind.value for kind in FindingType}
 _FINDING_KEYS = {"type", "affected_ids", "claimed_amount_minor", "currency", "evidence_ids", "explanation"}
+_FX_DATE_RULES = frozenset({"payment_date", "invoice_date", "posting_date"})
+_ROUNDING_MODES = frozenset({
+    "ROUND_CEILING", "ROUND_DOWN", "ROUND_FLOOR", "ROUND_HALF_DOWN",
+    "ROUND_HALF_EVEN", "ROUND_HALF_UP", "ROUND_UP", "ROUND_05UP",
+})
 _CURRENCY = re.compile(r"[A-Z]{3}")
-_SURROGATE = re.compile(r"[\ud800-\udfff]")
 _TOOLS = {"list_records", "get_record", "get_document", "calculator"}
+_MALFORMED_ACTION_CODES = frozenset({"invalid_action", "invalid_argument"})
 _RESULT_KEYS = {
     "list_records": "records", "get_record": "record",
     "get_document": "document", "calculator": "result",
@@ -49,6 +60,7 @@ _INTEGER_FIELDS = {
     "document_count", "debit_minor", "credit_minor", "total_minor", "amount_minor",
     "unit_price_minor", *_TABLES,
 }
+_NON_NEGATIVE_INTEGER_FIELDS = {"document_count", *_TABLES}
 _ID_FIELDS = {"episode_id", "entity_id", "row_id", "doc_id", "invoice_id", "payment_id"}
 
 Observation = dict[str, object]
@@ -109,6 +121,7 @@ class TerminalResult:
     total_steps: int
     wall_time_seconds: float
     reason: TerminalReason
+    validation_error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -118,67 +131,94 @@ class _Completion:
     terminated: bool
     reason: TerminalReason
     wall_time_seconds: float
+    validation_error: str | None = None
 
     @property
     def status(self) -> str:
         return "submitted" if self.terminated else "truncated"
 
 
+def _valid_text(value: object) -> bool:
+    if type(value) is not str:
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _is_id(value: object) -> bool:
-    return type(value) is str and bool(value) and _SURROGATE.search(value) is None
+    return _valid_text(value) and 1 <= len(value) <= MAX_ID_LENGTH
 
 
-def _ids(value: object, *, nonempty: bool = False, maximum: int | None = None) -> bool:
+def _ids(
+    value: object, *, nonempty: bool = False, maximum: int | None = None, unique: bool = False,
+) -> bool:
     return (
         type(value) is list
         and (not nonempty or bool(value))
         and (maximum is None or len(value) <= maximum)
         and all(_is_id(item) for item in value)
+        and (not unique or len(set(value)) == len(value))
     )
 
 
-def _valid_finding(value: object) -> bool:
-    return (
-        type(value) is dict
-        and value.keys() == _FINDING_KEYS
-        and isinstance(value["type"], str) and value["type"] in _FINDING_TYPES
-        and _ids(value["affected_ids"], nonempty=True)
-        and type(value["claimed_amount_minor"]) is int
-        and type(value["currency"]) is str and _CURRENCY.fullmatch(value["currency"]) is not None
-        and _ids(value["evidence_ids"], maximum=10)
-        and type(value["explanation"]) is str and len(value["explanation"]) <= 1000
-        and _SURROGATE.search(value["explanation"]) is None
-    )
+def _validate_finding(value: object, index: int) -> str | None:
+    if type(value) is not dict or value.keys() != _FINDING_KEYS:
+        return f"finding[{index}]: must be an object with required finding fields"
+    if not isinstance(value["type"], str) or value["type"] not in _FINDING_TYPES:
+        return f"finding[{index}]: invalid finding type"
+    if not _ids(value["affected_ids"], nonempty=True, maximum=MAX_AFFECTED_IDS, unique=True):
+        return f"finding[{index}]: affected_ids must be 1..{MAX_AFFECTED_IDS} unique valid IDs"
+    amount = value["claimed_amount_minor"]
+    if type(amount) is not int or not 0 <= amount <= MAX_CLAIMED_AMOUNT_MINOR:
+        return f"finding[{index}]: claimed_amount_minor must be an integer in 0..{MAX_CLAIMED_AMOUNT_MINOR}"
+    currency = value["currency"]
+    if not _valid_text(currency) or _CURRENCY.fullmatch(currency) is None:
+        return f"finding[{index}]: invalid currency code"
+    if not _ids(value["evidence_ids"], maximum=MAX_EVIDENCE_IDS):
+        return f"finding[{index}]: evidence_ids must be at most {MAX_EVIDENCE_IDS} valid IDs"
+    explanation = value["explanation"]
+    if not _valid_text(explanation) or len(explanation) > MAX_EXPLANATION_LENGTH:
+        return f"finding[{index}]: explanation must be valid UTF-8 text of at most {MAX_EXPLANATION_LENGTH} chars"
+    return None
 
 
-def _validated_submission(action: dict, episode_id: str) -> FindingsSubmission | None:
+def _validate_submission(action: dict, episode_id: str) -> tuple[FindingsSubmission | None, str | None]:
+    if action.keys() != {"type", "findings"}:
+        return None, "submit action must contain only type and findings"
     payload = action.get("findings")
-    if (
-        action.keys() != {"type", "findings"}
-        or type(payload) is not dict or payload.keys() != {"episode_id", "findings"}
-        or type(payload["episode_id"]) is not str or payload["episode_id"] != episode_id
-    ):
-        return None
+    if type(payload) is not dict or payload.keys() != {"episode_id", "findings"}:
+        return None, "findings payload must be an object with episode_id and findings"
+    if not _valid_text(payload["episode_id"]) or payload["episode_id"] != episode_id:
+        return None, "submission episode_id does not match active episode"
     findings = payload["findings"]
-    if type(findings) is not list or len(findings) > 30 or not all(map(_valid_finding, findings)):
-        return None
+    if type(findings) is not list or len(findings) > MAX_FINDINGS:
+        return None, f"findings must be a list of at most {MAX_FINDINGS} items"
+    for index, finding in enumerate(findings):
+        error = _validate_finding(finding, index)
+        if error is not None:
+            return None, error
     # Apply the wire budget to in-process policies and exported actions too.
     try:
         frame = json.dumps(action, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     except ValueError:
-        return None
+        return None, "submit action is not valid UTF-8 JSON"
     if len(frame) >= FRAME_BYTES:  # The newline also counts toward the frame.
-        return None
-    return cast(FindingsSubmission, deepcopy(payload))
+        return None, "submit action exceeds wire frame budget"
+    return cast(FindingsSubmission, deepcopy(payload)), None
+
+
+def _validated_submission(action: dict, episode_id: str) -> FindingsSubmission | None:
+    payload, _ = _validate_submission(action, episode_id)
+    return payload
 
 
 def _valid_tool_action(action: dict, kind: str) -> bool:
     keys = action.keys() - {"type"}
     if kind == "calculator":
-        return (
-            keys == {"expression"} and type(action["expression"]) is str
-            and _SURROGATE.search(action["expression"]) is None
-        )
+        return keys == {"expression"} and _valid_text(action["expression"])
     if kind == "get_document":
         return keys == {"doc_id"} and _is_id(action["doc_id"])
     if action.get("table") not in _TABLES:
@@ -193,7 +233,9 @@ def _valid_tool_action(action: dict, kind: str) -> bool:
 
 
 def _field(key: str, value: object) -> object:
-    if key in _INTEGER_FIELDS:
+    if key in _NON_NEGATIVE_INTEGER_FIELDS:
+        valid = type(value) is int and value >= 0
+    elif key in _INTEGER_FIELDS:
         valid = type(value) is int
     elif key == "quantity":
         valid = type(value) in (int, float)
@@ -204,7 +246,7 @@ def _field(key: str, value: object) -> object:
     elif key in _ID_FIELDS:
         valid = _is_id(value)
     else:
-        valid = type(value) is str
+        valid = _valid_text(value)
     if not valid:
         raise ValueError("invalid public field")
     return value
@@ -215,7 +257,15 @@ def _select(value: Mapping, fields: tuple[str, ...]) -> dict:
 
 
 def _project_policy(value: Mapping) -> dict:
+    if not isinstance(value, Mapping):
+        raise ValueError("invalid public policy")
     policy = _select(value, ("fx_date_rule", *_PERIOD_FIELDS))
+    if policy["fx_date_rule"] not in _FX_DATE_RULES:
+        raise ValueError("invalid fx_date_rule")
+    if policy["rounding_mode"] not in _ROUNDING_MODES:
+        raise ValueError("invalid rounding_mode")
+    if not policy["timezone"] or not policy["period_start"] or not policy["period_end"]:
+        raise ValueError("invalid policy period or timezone")
     if "recognition_date_rule" in value:
         if value["recognition_date_rule"] != "document_date":
             raise ValueError("invalid recognition date rule")
@@ -224,8 +274,12 @@ def _project_policy(value: Mapping) -> dict:
 
 
 def _project_record(value: Mapping, *, document: bool = False) -> dict:
+    if not isinstance(value, Mapping):
+        raise ValueError("invalid public record kind")
     # Ledger rows also have invoice/payment links, so test row_id first.
-    discriminator = next(key for key in _RECORD_FIELDS if key in value)
+    discriminator = next((key for key in _RECORD_FIELDS if key in value), None)
+    if discriminator is None:
+        raise ValueError("invalid public record kind")
     if discriminator == "fx_date_rule" and document:
         return _project_policy(value)
     if discriminator == "fx_date_rule" or (document and discriminator in ("row_id", "date")):
@@ -278,11 +332,25 @@ class AuditorEnv:
     def reset(self, seed: int, config: Mapping[str, object]) -> tuple[Observation, dict[str, object]]:
         episode = self._factory(seed, deepcopy(dict(config)))
         manifest = _select(episode.manifest, _MANIFEST_FIELDS)
-        manifest["record_counts"] = _select(episode.manifest["record_counts"], _TABLES)
-        manifest["currency_exponents"] = {
-            key: _field("document_count", value) for key, value in episode.manifest["currency_exponents"].items()
-            if isinstance(key, str) and _CURRENCY.fullmatch(key)
-        }
+        if _CURRENCY.fullmatch(manifest["base_currency"]) is None:
+            raise ValueError("invalid base_currency")
+        if manifest["rounding_mode"] not in _ROUNDING_MODES:
+            raise ValueError("invalid manifest rounding_mode")
+        if not manifest["timezone"] or not manifest["period_start"] or not manifest["period_end"]:
+            raise ValueError("invalid manifest period or timezone")
+        raw_counts = episode.manifest["record_counts"]
+        if not isinstance(raw_counts, Mapping):
+            raise ValueError("invalid record_counts")
+        manifest["record_counts"] = _select(raw_counts, _TABLES)
+        raw_exponents = episode.manifest["currency_exponents"]
+        if not isinstance(raw_exponents, Mapping) or not raw_exponents:
+            raise ValueError("invalid currency_exponents")
+        exponents: dict[str, int] = {}
+        for key, value in raw_exponents.items():
+            if not _valid_text(key) or _CURRENCY.fullmatch(key) is None or type(value) is not int or value < 0:
+                raise ValueError("invalid currency_exponents")
+            exponents[key] = value
+        manifest["currency_exponents"] = exponents
         observation = _copy_public({
             "task": _field("task", episode.task), "manifest": manifest,
             "policy": _project_policy(episode.policy),
@@ -334,6 +402,7 @@ class AuditorEnv:
                 total_steps=MAX_STEPS - self._remaining,
                 wall_time_seconds=completion.wall_time_seconds,
                 reason=completion.reason,
+                validation_error=completion.validation_error,
             )
         return deepcopy(self._terminal_result)
 
@@ -370,13 +439,16 @@ class AuditorEnv:
         self._remaining -= 1
         kind = action.get("type") if type(action) is dict else None
         if type(kind) is str and kind == "submit":
-            submission = _validated_submission(action, self._episode_id)
+            submission, validation_error = _validate_submission(action, self._episode_id)
             self._last_action_failed = submission is None
-            return self._finish(submission, terminated=True)
+            return self._finish(submission, terminated=True, validation_error=validation_error)
 
         self._inspection_steps += 1
         observation = self._research(action, kind)
-        self._last_action_failed = "error" in observation
+        error = observation.get("error")
+        self._last_action_failed = (
+            isinstance(error, Mapping) and error.get("code") in _MALFORMED_ACTION_CODES
+        )
         if self._remaining == 0:
             return self._finish(None, terminated=False, reason="step_limit")
         return {"remaining_steps": self._remaining, **observation}, 0.0, False, False, {}
@@ -421,6 +493,7 @@ class AuditorEnv:
     def _finish(
         self, submission: FindingsSubmission | None, *, terminated: bool,
         reason: TruncationReason | None = None,
+        validation_error: str | None = None,
     ) -> StepResult:
         empty: FindingsSubmission = {"episode_id": self._episode_id, "findings": []}
         completion_reason: TerminalReason
@@ -434,6 +507,7 @@ class AuditorEnv:
             terminated=terminated,
             reason=completion_reason,
             wall_time_seconds=max(0.0, self._clock() - self._started_at),
+            validation_error=validation_error if (terminated and submission is None) else None,
         )
         if self._mode == "train":
             result = self.terminal_result

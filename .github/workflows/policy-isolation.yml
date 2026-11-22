@@ -3,10 +3,10 @@ name: Policy isolation
 on:
   push:
     branches: [main]
-  workflow_dispatch:
   pull_request:
     branches: [main, "draft/**"]
     types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,6 +29,7 @@ jobs:
       - run: docker build --tag genesis-policy-smoke:ci tests/fixtures/policy_smoke
       - name: Verify policy image with the runner environment
         run: env -i PATH="$PATH" docker image inspect --format '{{.Id}}' "$GENESIS_POLICY_SMOKE_IMAGE"
+      - run: python -m unittest discover -s tests -p test_evaluator_isolation.py -v
       - run: python -m genesis.cli verify --all --require-docker
       - name: Run the baseline policy image on a public FX case
         run: |

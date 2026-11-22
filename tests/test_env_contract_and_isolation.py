@@ -200,6 +200,22 @@ class DataContractTests(unittest.TestCase):
             **payload, "findings": [{**verdict, "evidence_ids": [*verdict["evidence_ids"], "extra"]}],
         })
         self.expect_failure("findings", {**payload, "findings": [{**verdict, "type": "hidden-fifth-type"}]})
+        self.expect_failure("findings", {
+            **payload, "findings": [{**verdict, "affected_ids": [f"row-{i}" for i in range(65)]}],
+        })
+        self.expect_failure("findings", {
+            **payload, "findings": [{**verdict, "affected_ids": ["row-1", "row-1"]}],
+        })
+        self.expect_failure("findings", {
+            **payload, "findings": [{**verdict, "affected_ids": ["x" * 129]}],
+        })
+        self.expect_failure("findings", {
+            **payload, "findings": [{**verdict, "claimed_amount_minor": -1}],
+        })
+        self.expect_failure("findings", {
+            **payload, "findings": [{**verdict, "claimed_amount_minor": 10**18 + 1}],
+        })
+        self.expect_failure("observation", {"remaining_steps": 99, "error": {"code": "unknown_code"}})
 
     def test_public_action_and_trajectory_shapes(self):
         self.expect_pass("action", {"type": "list_records", "table": "ledger", "cursor": None, "limit": 50})

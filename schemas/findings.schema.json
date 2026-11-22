@@ -2,33 +2,45 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.genesis.invalid/v1/findings.schema.json",
   "title": "Public episode submission",
+  "description": "Structured audit findings submitted by a policy at episode termination.",
   "type": "object",
   "properties": {
     "episode_id": {
-      "$ref": "common.schema.json#/$defs/id"
+      "$ref": "common.schema.json#/$defs/id",
+      "description": "Identifier of the active episode being audited."
     },
     "findings": {
+      "description": "At most 30 claimed financial discrepancies for the episode.",
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
           "type": {
-            "$ref": "common.schema.json#/$defs/error_type"
+            "$ref": "common.schema.json#/$defs/error_type",
+            "description": "Canonical finding category."
           },
           "affected_ids": {
+            "description": "1 to 64 unique canonical record/document identifiers affected by the discrepancy.",
             "type": "array",
             "items": {
               "$ref": "common.schema.json#/$defs/id"
             },
-            "minItems": 1
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true
           },
           "claimed_amount_minor": {
-            "$ref": "common.schema.json#/$defs/minor"
+            "$ref": "common.schema.json#/$defs/minor",
+            "description": "Non-negative discrepancy magnitude in currency minor units (0..1e18).",
+            "minimum": 0,
+            "maximum": 1000000000000000000
           },
           "currency": {
-            "$ref": "common.schema.json#/$defs/currency"
+            "$ref": "common.schema.json#/$defs/currency",
+            "description": "ISO 4217 currency code of claimed_amount_minor."
           },
           "evidence_ids": {
+            "description": "Up to 10 public evidence IDs (row_id, doc_id, fx:..., or 'policy') supporting the claim.",
             "type": "array",
             "items": {
               "$ref": "common.schema.json#/$defs/id"
@@ -36,6 +48,7 @@
             "maxItems": 10
           },
           "explanation": {
+            "description": "Short human-readable audit explanation (up to 1,000 characters; not used by matcher).",
             "type": "string",
             "maxLength": 1000
           }

@@ -2,17 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.genesis.invalid/v1/trajectories.schema.json",
   "title": "One public trajectory JSONL step",
+  "description": "Allowlisted public step transition recorded from a policy rollout without private evaluator fields.",
   "type": "object",
   "properties": {
     "episode_id": {
-      "$ref": "common.schema.json#/$defs/id"
+      "$ref": "common.schema.json#/$defs/id",
+      "description": "Public episode identifier."
     },
     "step": {
+      "description": "1-based step index within the episode (1..100).",
       "type": "integer",
       "minimum": 1,
       "maximum": 100
     },
     "action": {
+      "description": "Public policy action or sanitized invalid-action marker.",
       "oneOf": [
         {
           "$ref": "action.schema.json"
@@ -32,17 +36,21 @@
       ]
     },
     "observation": {
-      "$ref": "observation.schema.json"
+      "$ref": "observation.schema.json",
+      "description": "Public observation produced by the step."
     },
     "reward": {
+      "description": "Observed reward (always 0 on non-terminal steps and in eval mode; terminal return in [-1, 1] in train mode).",
       "type": "number",
       "minimum": -1,
       "maximum": 1
     },
     "terminated": {
+      "description": "True when the episode ended via submit.",
       "type": "boolean"
     },
     "truncated": {
+      "description": "True when the episode ended via step or time budget exhaustion.",
       "type": "boolean"
     }
   },

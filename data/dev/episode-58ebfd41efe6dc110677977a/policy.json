@@ -1,1 +1,1 @@
-{"fx_date_rule":"payment_date","period_end":"2026-04-01T00:00:00+05:00","period_start":"2026-03-01T00:00:00+05:00","recognition_date_rule":"document_date","rounding_mode":"ROUND_HALF_EVEN","timezone":"Asia/Almaty"}
+{"fx_date_rule":"invoice_date","period_end":"2026-04-01T00:00:00+00:00","period_start":"2026-03-01T00:00:00+00:00","recognition_date_rule":"document_date","rounding_mode":"ROUND_HALF_EVEN","timezone":"UTC"}

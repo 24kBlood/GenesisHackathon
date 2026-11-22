@@ -3,6 +3,7 @@
 !Dockerfile.policy
 !LICENSE
 !NOTICE
+!pyproject.toml
 !src/
 !src/**
 !schemas/

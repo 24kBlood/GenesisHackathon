@@ -67,14 +67,22 @@ def validate_links(episode: Episode) -> frozenset[str]:
         raise ValueError("duplicated public evidence ID")
     if len(invoices) != len(public.invoices) or len(payments) != len(public.payments):
         raise ValueError("duplicated public record ID")
+    valid_affected = evidence | invoices | payments
     for row in public.ledger:
-        if row["invoice_id"] not in invoices | {None} or row["payment_id"] not in payments | {None}:
+        invoice_id = row["invoice_id"]
+        payment_id = row["payment_id"]
+        if (invoice_id is not None and invoice_id not in invoices) or (
+            payment_id is not None and payment_id not in payments
+        ):
             raise ValueError("unresolved ledger reference")
     for row in public.payments:
-        if not set(row["invoice_refs"] or []) <= invoices or row.get("refund_of_payment_id") not in payments | {None}:
+        refund_id = row.get("refund_of_payment_id")
+        if not set(row["invoice_refs"] or []) <= invoices or (
+            refund_id is not None and refund_id not in payments
+        ):
             raise ValueError("unresolved payment reference")
     for issue in truth["issues"]:
-        if not set(issue["affected_ids"]) <= evidence | invoices | payments:
+        if not set(issue["affected_ids"]) <= valid_affected:
             raise ValueError("unresolved truth affected ID")
         if not issue["acceptable_evidence_sets"] or any(
             not refs or not set(refs) <= evidence for refs in issue["acceptable_evidence_sets"]

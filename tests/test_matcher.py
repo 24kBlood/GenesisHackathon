@@ -146,10 +146,25 @@ class MatcherTests(TestCase):
             with self.subTest(value=value):
                 with self.assertRaisesRegex(ValueError, "non-negative integers"):
                     match([], [], PUBLIC_IDS, tolerances_minor={"fx_conversion": value})
+        for bad_key in ("unknown_type", 123):
+            with self.subTest(bad_key=bad_key):
+                with self.assertRaisesRegex(ValueError, "known finding types"):
+                    match([], [], PUBLIC_IDS, tolerances_minor={bad_key: 0})
 
-    def test_duplicate_truth_ids_are_rejected_before_matching(self) -> None:
+    def test_duplicate_truth_ids_and_claims_are_rejected_before_matching(self) -> None:
         with self.assertRaisesRegex(ValueError, "IDs must be unique"):
             match([finding()], [issue(), issue(amount=101)], PUBLIC_IDS)
+        with self.assertRaisesRegex(ValueError, "Truth claims must be unique"):
+            match([finding()], [issue("issue-a", 100), issue("issue-b", 100)], PUBLIC_IDS)
+
+    def test_iterative_maximum_matching_scales_past_recursion_limit(self) -> None:
+        n = 1200
+        claims = [finding(amount=i, affected=("invoice-a",), evidence=("ev-c",)) for i in range(n - 1, -1, -1)]
+        truth = [issue(f"issue-{i:04d}", amount=i, acceptable=(("ev-c",),)) for i in range(n - 1, -1, -1)]
+        for row in truth:
+            row["affected_ids"] = ["invoice-a"]
+        result = match(claims, truth, PUBLIC_IDS, tolerances_minor={"fx_conversion": 1})
+        self.assert_counts(result, (n, 0, 0))
 
     def test_empty_truth_or_submissions_produce_expected_counts(self) -> None:
         self.assert_counts(match([], [], PUBLIC_IDS), (0, 0, 0))

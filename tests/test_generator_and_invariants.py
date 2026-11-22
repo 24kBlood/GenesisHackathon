@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import tempfile
 import unittest
 from collections import Counter, defaultdict
@@ -7,10 +9,9 @@ from decimal import Decimal, localcontext
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from jsonschema import Draft202012Validator
-from referencing import Registry, Resource
-
 import test_env_contract_and_isolation as contract
+from genesis.evaluation.permutation import validate_links
+from genesis.evaluation.public_proofs import verify_public_proofs
 from genesis.generation import export_episode, generate_episode
 
 
@@ -36,18 +37,13 @@ class CleanGeneratorTests(unittest.TestCase):
                 export_episode(generate_episode(0, CLEAN), root / "first")
 
     def test_exported_records_match_v1_schemas(self):
-        schemas = {
-            path.name.removesuffix(".schema.json"): contract.load(path)
-            for path in (contract.ROOT / "schemas").glob("*.schema.json")
-        }
-        registry = Registry().with_resources(
-            (schema["$id"], Resource.from_contents(schema)) for schema in schemas.values()
-        )
+        contract.DataContractTests.setUpClass()
+        validators = contract.DataContractTests.validators
         for include_distractors in (False, True):
             with self.subTest(include_distractors=include_distractors):
-                self.assert_export_matches_schemas(schemas, registry, include_distractors)
+                self.assert_export_matches_schemas(validators, include_distractors)
 
-    def assert_export_matches_schemas(self, schemas, registry, include_distractors):
+    def assert_export_matches_schemas(self, validators, include_distractors):
         with tempfile.TemporaryDirectory() as temporary:
             target = Path(temporary) / "episode"
             export_episode(generate_episode(413, {**CLEAN, "include_distractors": include_distractors}), target)
@@ -56,6 +52,10 @@ class CleanGeneratorTests(unittest.TestCase):
                 "manifest.json", "policy.json", "ledger.csv", "fx.csv", "invoices.jsonl", "payments.jsonl",
             })
             self.assertEqual({path.name for path in evaluator.iterdir()}, {"truth.json", "provenance.json"})
+            if os.name == "posix":
+                self.assertEqual(stat.S_IMODE(evaluator.stat().st_mode), 0o700)
+                for secret in evaluator.iterdir():
+                    self.assertEqual(stat.S_IMODE(secret.stat().st_mode), 0o600)
             artifacts = {
                 "manifest": [contract.load(public / "manifest.json")],
                 "policy": [contract.load(public / "policy.json")],
@@ -67,9 +67,7 @@ class CleanGeneratorTests(unittest.TestCase):
                 "provenance": [contract.load(evaluator / "provenance.json")],
             }
             for name, entries in artifacts.items():
-                validator = Draft202012Validator(
-                    schemas[name], registry=registry, format_checker=Draft202012Validator.FORMAT_CHECKER,
-                )
+                validator = validators[name]
                 for entry in entries:
                     validator.validate(entry)
                     if name not in {"truth", "provenance"}:
@@ -79,7 +77,7 @@ class CleanGeneratorTests(unittest.TestCase):
             self.assertEqual(artifacts["provenance"][0]["changes"], [])
             if include_distractors:
                 refund, = [payment for payment in artifacts["payment"] if "payment_kind" in payment]
-                payment_schema = Draft202012Validator(schemas["payment"], registry=registry)
+                payment_schema = validators["payment"]
                 for invalid in (
                     {key: value for key, value in refund.items() if key != "refund_of_payment_id"},
                     {key: value for key, value in refund.items() if key != "payment_kind"},
@@ -170,7 +168,8 @@ class DistractorTests(unittest.TestCase):
     def test_consecutive_installments_are_each_fully_allocated(self):
         grouped = defaultdict(list)
         for payment in self.public.payments:
-            grouped[payment["invoice_refs"][0]].append(payment)
+            if payment["invoice_refs"]:
+                grouped[payment["invoice_refs"][0]].append(payment)
         # Identify the split only from public documents and ordinary payment roles.
         invoice_id, = [key for key, payments in grouped.items()
                        if len(payments) == 2 and all("payment_kind" not in p for p in payments)]
@@ -289,24 +288,38 @@ class DistractorTests(unittest.TestCase):
                     }))
                     if not enabled:
                         self.assertEqual(current, generate_episode(seed, CLEAN))
+                        self.assertEqual(current, generate_episode(seed, {**CLEAN, "interaction_scenarios": []}))
                     else:
                         self.assertIn("distractor_operations", current.evaluator.provenance["initial_history"])
                     public = current.public
                     self.assertEqual(public.manifest["document_count"], len(public.invoices) + len(public.payments))
                     self.assertEqual(len({row["row_id"] for row in public.ledger}), len(public.ledger))
                     self.assertEqual(sum(row["debit_minor"] - row["credit_minor"] for row in public.ledger), 0)
-                    cash = 0
-                    per_timestamp = defaultdict(int)
-                    for row in public.ledger:
-                        if row["account"] == "bank":
-                            per_timestamp[row["timestamp"]] += row["debit_minor"] - row["credit_minor"]
-                    for timestamp in sorted(per_timestamp):
-                        cash += per_timestamp[timestamp]
-                        self.assertGreaterEqual(cash, 0)
+                    self._assert_non_negative_cash(public)
             combined = generate_episode(seed, {**self.config, "error_counts": all_counts})
             self.assertEqual(Counter(issue["type"] for issue in combined.evaluator.truth["issues"]), all_counts)
+            self._assert_non_negative_cash(combined.public)
+            full_mutated = generate_episode(
+                seed,
+                {
+                    **self.config,
+                    "error_counts": all_counts,
+                    "interaction_scenarios": ["partial_fx_payment_at_cutoff", "duplicate_invoice_with_fx"],
+                },
+            )
+            self._assert_non_negative_cash(full_mutated.public)
             refund, = [p for p in combined.public.payments if p.get("payment_kind") == "refund"]
             self.assert_refund_reconciles(combined.public, refund)
+
+    def _assert_non_negative_cash(self, public):
+        cash = 0
+        per_timestamp = defaultdict(int)
+        for row in public.ledger:
+            if row["account"] == "bank":
+                per_timestamp[row["timestamp"]] += row["debit_minor"] - row["credit_minor"]
+        for timestamp in sorted(per_timestamp):
+            cash += per_timestamp[timestamp]
+            self.assertGreaterEqual(cash, 0)
 
 
 class ConfiguredGeneratorTests(unittest.TestCase):
@@ -335,3 +348,66 @@ class ConfiguredGeneratorTests(unittest.TestCase):
                             len(set().union(*(set(issue["affected_ids"]) for issue in issues))),
                             sum(len(issue["affected_ids"]) for issue in issues),
                         )
+
+    def test_parameterized_scale_currencies_timezones_and_rounding(self):
+        cfg = {
+            "schema_version": "1.0.0",
+            "obligation_count": 60,
+            "base_currency": "USD",
+            "foreign_currency": "EUR",
+            "timezone": "America/New_York",
+            "include_distractors": True,
+            "error_counts": {
+                "duplicate_invoice": 3,
+                "payment_allocation": 3,
+                "fx_conversion": 3,
+                "period_cutoff": 3,
+            },
+        }
+        episode = generate_episode(1001, cfg)
+        validate_links(episode)
+        verify_public_proofs(episode)
+        public = episode.public
+        self.assertGreaterEqual(len(public.ledger), 200)
+        self.assertGreaterEqual(public.manifest["document_count"], 20)
+        self.assertEqual(public.manifest["base_currency"], "USD")
+        self.assertEqual(public.policy["timezone"], "America/New_York")
+        self.assertEqual(len(episode.evaluator.truth["issues"]), 12)
+        # Domain-separated private IDs remain deterministic and independent of public ID count
+        other = generate_episode(1001, {**cfg, "obligation_count": 80})
+        self.assertEqual(
+            [issue["issue_id"] for issue in episode.evaluator.truth["issues"]],
+            [issue["issue_id"] for issue in other.evaluator.truth["issues"]],
+        )
+        # Verify fractional FX conversions exercise ROUND_HALF_EVEN
+        zone = ZoneInfo(public.policy["timezone"])
+        exps = public.manifest["currency_exponents"]
+        quotes = {(q["date"], q["source_currency"], q["target_currency"]): q["rate"] for q in public.fx}
+        non_exact = 0
+        for payment in public.payments:
+            if payment["currency"] != "USD":
+                day = datetime.fromisoformat(payment["timestamp"]).astimezone(zone).date().isoformat()
+                rate = quotes[(day, payment["currency"], "USD")]
+                raw = (Decimal(payment["amount_minor"]).scaleb(-exps[payment["currency"]]) * Decimal(rate)).scaleb(exps["USD"])
+                if raw != int(raw):
+                    non_exact += 1
+        self.assertGreater(non_exact, 0)
+        # Reject invalid parameterized config values
+        for bad in (
+            {**CLEAN, "obligation_count": 3},
+            {**CLEAN, "base_currency": "USD", "foreign_currency": "USD"},
+            {**CLEAN, "timezone": "Not/A_Zone"},
+            {**CLEAN, "fx_date_rule": "invoice_date", "interaction_scenarios": ["duplicate_invoice_with_fx"]},
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                generate_episode(0, bad)
+
+    def test_export_rejects_dangling_symlink_target(self):
+        if os.name != "posix":
+            return
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            link = root / "dangling"
+            link.symlink_to(root / "nonexistent")
+            with self.assertRaises(FileExistsError):
+                export_episode(generate_episode(413, CLEAN), link)
