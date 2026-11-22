@@ -31,6 +31,7 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - name: Verify installed wheel from outside the checkout
         run: |
+          unset PYTHONPATH
           wheel_dir="$(mktemp -d)"
           python -m pip wheel --no-deps --wheel-dir "$wheel_dir" .
           python -m venv "$wheel_dir/venv"
@@ -38,5 +39,5 @@ jobs:
           episodes=(data/dev/episode-*)
           episode="${episodes[0]##*/}"
           cd "$wheel_dir"
-          env -u PYTHONPATH venv/bin/genesis verify --all
-          env -u PYTHONPATH venv/bin/genesis run-policy "$episode" --policy simple_reconciliation
+          venv/bin/genesis verify --all
+          venv/bin/genesis run-policy "$episode" --policy simple_reconciliation
