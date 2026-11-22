@@ -7,7 +7,9 @@ from time import monotonic
 from typing import Protocol
 
 from genesis.environment.auditor_env import AuditorEnv, StepResult, TerminalResult
+from genesis.environment.episode import build_episode
 from genesis.environment.jsonl import TransportCode, TransportError
+from genesis.generation import generate_closed_episode
 
 
 class PolicyChannel(Protocol):
@@ -28,6 +30,22 @@ class JudgeResult:
 
 
 StepObserver = Callable[[str, int, object, StepResult], None]
+
+
+def closed_environment(*, clock: Callable[[], float] = monotonic) -> AuditorEnv:
+    """Build an eval environment for cases provisioned by the trusted coordinator."""
+    def factory(seed, config):
+        episode = generate_closed_episode(seed, config)
+        public = episode.public
+        return build_episode(
+            task="Проверьте открытые записи эпизода.",
+            manifest=public.manifest,
+            policy=public.policy,
+            tables={name: getattr(public, name) for name in ("ledger", "invoices", "payments", "fx")},
+            truth=episode.evaluator.truth,
+        )
+
+    return AuditorEnv(factory, mode="eval", clock=clock)
 
 
 async def run_episode(

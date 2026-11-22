@@ -10,6 +10,11 @@
     }
   },
   "properties": {
+    "episode_id": {
+      "type": "string",
+      "pattern": "^episode-(?:[0-9a-f]{24}|[0-9a-f]{32})$(?![\\s\\S])",
+      "description": "Explicit public identifier. Hidden cases require an independently generated 128-bit ID."
+    },
     "schema_version": {
       "$ref": "common.schema.json#/$defs/version",
       "description": "Data contract schema version."
