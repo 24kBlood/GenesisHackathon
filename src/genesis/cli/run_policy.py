@@ -2,7 +2,10 @@
 
 import asyncio
 import json
+import os
+import sys
 from time import monotonic
+from uuid import uuid4
 
 from genesis.environment.docker_policy import DockerPolicy, PolicyCleanupError
 from genesis.environment.jsonl import TransportError
@@ -17,7 +20,11 @@ from genesis.trajectories import TrajectoryRecorder
 
 def _resolve_profile(root, name):
     if name.startswith("episode-"):
-        for entry in load_dataset_entries(root / "data" / "configs"):
+        entries = load_dataset_entries(root / "data" / "configs")
+        for entry in entries:
+            if entry.config.get("episode_id") == name:
+                return BenchmarkEpisode(name, entry.seed, entry.config)
+        for entry in entries:
             episode = generate_episode(entry.seed, entry.config)
             if episode.public.manifest["episode_id"] == name:
                 return BenchmarkEpisode(name, entry.seed, entry.config)
@@ -28,6 +35,18 @@ def _resolve_profile(root, name):
         if profile.name == name:
             return profile
     raise ValueError("unknown profile. Available: " + ", ".join(profile.name for profile in profiles))
+
+
+def _publish_trace(destination, contents):
+    staged = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+    try:
+        with staged.open("xb") as output:
+            output.write(contents)
+            output.flush()
+            os.fsync(output.fileno())
+        os.link(staged, destination)
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def run_policy(root, args):
@@ -42,11 +61,15 @@ def run_policy(root, args):
             _env(clock=monotonic), seed=profile.seed, config=profile.config, runner=runner,
             on_step=trace.record if trace is not None else None,
         ))
-        if trace is not None:
-            contents = trace.to_jsonl()
-            with args.trace.open("xb") as output:
-                output.write(contents)
         result = {"profile": profile.name, **_diagnostics(outcome.terminal), "transport_error": outcome.transport_error}
+        if trace is not None:
+            try:
+                _publish_trace(args.trace, trace.to_jsonl())
+            except (OSError, ValueError) as error:
+                result["trace"] = f"failed: {type(error).__name__}: {error}"
+                print(f"trace publication failed: {error}", file=sys.stderr)
+            else:
+                result["trace"] = "written"
     except TransportError as error:
         print(f"FAIL policy infrastructure: {error.code}")
         return 1

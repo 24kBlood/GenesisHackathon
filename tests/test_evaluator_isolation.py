@@ -202,11 +202,12 @@ class EvaluatorIsolationTests(unittest.IsolatedAsyncioTestCase):
         commands = AsyncMock(side_effect=[
             json.dumps([{"Id": "sha256:" + "0" * 64, "Config": {}}]).encode("ascii"),
             b"created",
+            b"2026-11-22T10:00:00Z",
             TransportError(TransportCode.PROCESS_ERROR),
         ])
         with (
             patch.object(runner, "_management", commands),
-            patch.object(runner, "_command", AsyncMock(return_value=object())),
+            patch.object(runner, "_command", AsyncMock(return_value=SimpleNamespace(returncode=None))),
             patch("genesis.environment.docker_policy.JsonlProcess", return_value=channel),
             self.assertRaises(PolicyCleanupError),
         ):

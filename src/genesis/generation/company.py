@@ -273,11 +273,15 @@ def _history(
         unpaid_near_end = rng.choice((False, True))
         unpaid_issued = _timestamp(end - timedelta(days=1), tz, hour=16) if unpaid_near_end else _timestamp(start, tz)
         unpaid_due = _timestamp(end + timedelta(days=14), tz) if unpaid_near_end else _timestamp(start + timedelta(days=21), tz)
+        foreign_quantity = rng.randint(1, 6)
+        foreign_unit_price = _positive_amount_price(
+            foreign_quantity, rng.randint(1, 50) * 100, foreign_currency, foreign_rate, base_currency,
+        )
         obligations = [
             Obligation(
                 currency=foreign_currency,
-                quantity=rng.randint(1, 6),
-                unit_price_minor=rng.randint(1, 50) * 100,
+                quantity=foreign_quantity,
+                unit_price_minor=foreign_unit_price,
                 issued_at=_timestamp(start + timedelta(days=3), tz),
                 due_at=_timestamp(start + timedelta(days=21), tz),
                 paid_at=_timestamp(start + timedelta(days=7), tz),
@@ -336,6 +340,8 @@ def _history(
         if index == 0 and unit_price % 2 == 0:
             unit_price += 1
         quantity = 1 if index == 0 else rng.randint(1, 8)
+        if currency != base_currency:
+            unit_price = _positive_amount_price(quantity, unit_price, currency, rates[currency], base_currency)
         obligations.append(Obligation(
             currency=currency,
             quantity=quantity,
@@ -384,6 +390,17 @@ def _base_amount(
     base_currency: str = BASE_CURRENCY, exponents: dict[str, int] = CURRENCY_EXPONENTS,
 ) -> int:
     return convert_minor(amount, source_currency, base_currency, rate, exponents, ROUND_HALF_EVEN)
+
+
+def _positive_amount_price(
+    quantity: int, unit_price_minor: int, currency: str, rate: str, base_currency: str,
+) -> int:
+    if _base_amount(quantity * unit_price_minor, currency, rate, base_currency) > 0:
+        return unit_price_minor
+    for candidate in range(unit_price_minor + 1, 2_000_001):
+        if _base_amount(quantity * candidate, currency, rate, base_currency) > 0:
+            return candidate
+    raise ValueError("no positive base posting is reachable for the configured currency pair")
 
 
 class _Ids:

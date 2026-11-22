@@ -9,8 +9,10 @@ from collections.abc import Awaitable
 from contextlib import suppress
 from enum import StrEnum
 from time import monotonic
-from typing import TypeVar
+from typing import Literal, TypeVar
 
+
+TransportPhase = Literal["setup", "interaction"]
 
 FRAME_BYTES = 512 * 1024
 STDERR_BYTES = 64 * 1024
@@ -28,8 +30,9 @@ class TransportCode(StrEnum):
 
 
 class TransportError(Exception):
-    def __init__(self, code: TransportCode):
+    def __init__(self, code: TransportCode, *, phase: TransportPhase = "interaction"):
         self.code = code
+        self.phase = phase
         super().__init__(code.value)
 
 
