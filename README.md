@@ -7,7 +7,7 @@
 [![Проверка контрактов и wheel](https://github.com/24kBlood/GenesisHackathon/actions/workflows/data-contract.yml/badge.svg?branch=main)](https://github.com/24kBlood/GenesisHackathon/actions/workflows/data-contract.yml)
 [![Автономная проверка](https://github.com/24kBlood/GenesisHackathon/actions/workflows/offline-verify.yml/badge.svg?branch=main)](https://github.com/24kBlood/GenesisHackathon/actions/workflows/offline-verify.yml)
 
-[Быстрый старт](#быстрый-старт) · [Данные](#данные-и-траектории) · [Как устроена среда](#как-устроена-среда) · [Проверки](#проверки-и-результаты)
+[Быстрый старт](#быстрый-старт) · [Проверка для жюри](materials/submission/README.md) · [Данные](#данные-и-траектории) · [Как устроена среда](#как-устроена-среда) · [Проверки](#проверки-и-результаты)
 
 ## Быстрый старт
 
