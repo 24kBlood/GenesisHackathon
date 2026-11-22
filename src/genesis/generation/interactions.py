@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import ROUND_HALF_EVEN
 from random import Random
 from typing import TYPE_CHECKING, Callable
 from zoneinfo import ZoneInfo
@@ -44,7 +45,10 @@ def normalize_scenarios(requested: object) -> list[str]:
 def build_terms(
     scenarios: list[str], end: datetime, rng: Random,
     *,
-    pair_rates: tuple[tuple[str, str], tuple[str, str]] = (("3.40", "3.60"), ("3.20", "3.25")),
+    source_currency: str,
+    target_currency: str,
+    exponents: dict[str, int],
+    pair_rates: tuple[tuple[str, str], tuple[str, str]],
 ) -> dict[str, InteractionTerms]:
     result = {}
     tz = end.tzinfo
@@ -59,9 +63,16 @@ def build_terms(
             issued = (end_utc - timedelta(days=6, hours=14)).astimezone(tz)
             paid = (end_utc - timedelta(days=3, hours=12)).astimezone(tz)
             rate, wrong_rate, wrong_date = dup_rate, dup_wrong, None
-        result[name] = InteractionTerms(
-            issued.isoformat(), paid.isoformat(), rng.randint(400, 1400), rate, wrong_rate, wrong_date,
-        )
+        if rate == wrong_rate:
+            raise ValueError("interaction requires distinct FX quotes")
+        amount = rng.randint(400, 1400)
+        while True:
+            correct = convert_minor(amount, source_currency, target_currency, rate, exponents, ROUND_HALF_EVEN)
+            wrong = convert_minor(amount, source_currency, target_currency, wrong_rate, exponents, ROUND_HALF_EVEN)
+            if correct >= 2 and wrong != correct:
+                break
+            amount *= 10
+        result[name] = InteractionTerms(issued.isoformat(), paid.isoformat(), amount, rate, wrong_rate, wrong_date)
     return result
 
 

@@ -22,6 +22,27 @@ def _finding(kind, amount, currency, affected, evidence):
 
 
 class InteractionTests(TestCase):
+    def test_both_scenarios_have_visible_fx_deltas_across_currency_pairs(self):
+        currencies = ("EUR", "GBP", "JPY", "KZT", "USD")
+        for base in currencies:
+            for foreign in currencies:
+                if base == foreign:
+                    continue
+                with self.subTest(base=base, foreign=foreign):
+                    config = {
+                        **_config([PARTIAL_FX_AT_CUTOFF, DUPLICATE_WITH_FX]),
+                        "base_currency": base,
+                        "foreign_currency": foreign,
+                    }
+                    episode = generate_episode(2, config)
+                    verify_public_proofs(episode)
+                    issues = episode.evaluator.truth["issues"]
+                    self.assertEqual(
+                        Counter(issue["type"] for issue in issues),
+                        {"payment_allocation": 1, "duplicate_invoice": 1, "fx_conversion": 2},
+                    )
+                    self.assertTrue(all(issue["expected_amount_minor"] > 0 for issue in issues))
+
     def _reconcile_public(self, public, scenario):
         fx = {f"fx:{row['date']}:{row['source_currency']}:{row['target_currency']}": row["rate"] for row in public.fx}
         zone = ZoneInfo(public.policy["timezone"])

@@ -2,7 +2,7 @@
 
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
-from decimal import Decimal, ROUND_HALF_EVEN
+from decimal import Context, Decimal, ROUND_HALF_EVEN, localcontext
 from functools import partial
 from hashlib import sha256
 from random import Random
@@ -231,9 +231,18 @@ def _interaction_rates(source: str, target: str) -> tuple[tuple[str, str], tuple
     if (source, target) == ("JPY", "KZT"):
         return (("3.40", "3.60"), ("3.20", "3.25"))
     base_ratio = _USD_VALUE[source] / _USD_VALUE[target]
+
+    def rate_pair(correct_factor: str, wrong_factor: str) -> tuple[str, str]:
+        correct = base_ratio * Decimal(correct_factor)
+        wrong = base_ratio * Decimal(wrong_factor)
+        pair = _format_rate(correct), _format_rate(wrong)
+        if pair[0] == pair[1]:
+            return _format_rate(correct, places=8), _format_rate(wrong, places=8)
+        return pair
+
     return (
-        (_format_rate(base_ratio * Decimal("1.02")), _format_rate(base_ratio * Decimal("1.08"))),
-        (_format_rate(base_ratio * Decimal("0.98")), _format_rate(base_ratio * Decimal("1.005"))),
+        rate_pair("1.02", "1.08"),
+        rate_pair("0.98", "1.005"),
     )
 
 
@@ -419,13 +428,15 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
     fx_date_rule = normalized_config.get("fx_date_rule", DEFAULT_FX_DATE_RULE)
     tz = ZoneInfo(tz_name)
 
-    start, end, obligations = _history(
-        seed,
-        obligation_count=obligation_count,
-        base_currency=base_currency,
-        foreign_currency=foreign_currency,
-        tz=tz,
-    )
+    with localcontext(Context(prec=64, rounding=ROUND_HALF_EVEN)):
+        start, end, obligations = _history(
+            seed,
+            obligation_count=obligation_count,
+            base_currency=base_currency,
+            foreign_currency=foreign_currency,
+            tz=tz,
+        )
+        pair_rates = _interaction_rates(foreign_currency, base_currency)
     distractors = (
         plan_clean_distractors(_rng(seed, "clean-distractors"))
         if normalized_config.get("include_distractors") else None
@@ -434,7 +445,10 @@ def generate_episode(seed: int, config: Mapping[str, Any]) -> Episode:
         normalized_config.get("interaction_scenarios", []),
         datetime.fromisoformat(_timestamp(end, tz, hour=0)),
         _rng(seed, "interaction-terms"),
-        pair_rates=_interaction_rates(foreign_currency, base_currency),
+        source_currency=foreign_currency,
+        target_currency=base_currency,
+        exponents=CURRENCY_EXPONENTS,
+        pair_rates=pair_rates,
     )
     scenario_obligations = [
         Obligation(foreign_currency, 1, item.amount_minor, item.issued_at, item.paid_at, item.paid_at, item.correct_rate)

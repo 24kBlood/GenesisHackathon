@@ -111,6 +111,21 @@ class DataContractTests(unittest.TestCase):
         cls.truth = cast(EpisodeTruth, load(EVALUATOR / "truth.json"))
         cls.provenance = load(EVALUATOR / "provenance.json")
 
+    def test_config_schema_matches_currency_and_interaction_constraints(self):
+        config = {"schema_version": "1.0.0", "error_counts": {}}
+        self.expect_pass("config", config)
+        self.expect_pass("config", {**config, "base_currency": "JPY", "foreign_currency": "EUR"})
+        self.expect_pass("config", {**config, "fx_date_rule": "invoice_date", "interaction_scenarios": []})
+        for values in (
+            {"base_currency": "CHF"},
+            {"base_currency": "JPY"},
+            {"foreign_currency": "KZT"},
+            {"base_currency": "EUR", "foreign_currency": "EUR"},
+            {"fx_date_rule": "invoice_date", "interaction_scenarios": ["partial_fx_payment_at_cutoff"]},
+        ):
+            with self.subTest(values=values):
+                self.expect_failure("config", {**config, **values})
+
     def expect_pass(self, schema, sample):
         self.validators[schema].validate(sample)
 

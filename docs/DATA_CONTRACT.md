@@ -42,9 +42,9 @@
 По умолчанию `generate_episode(seed, config)` строит компактный базовый профиль (`obligation_count=4`, `base_currency="KZT"`, `foreign_currency="JPY"`, `timezone="Asia/Almaty"`, `fx_date_rule="payment_date"`). Опциональные поля `config.schema.json` позволяют масштабировать и варьировать эпизоды без нарушения обратной совместимости:
 
 - `obligation_count` (`4..500`): число базовых обязательств до добавления отвлекающих случаев и взаимодействий (позволяет получать книги с 220+ проводками и 100+ документами).
-- `base_currency` и `foreign_currency`: поддерживаются валютные пары из `KZT`, `JPY`, `USD`, `EUR`, `GBP` с явными разрядностями в `manifest.currency_exponents`.
+- `base_currency` и `foreign_currency` должны различаться с учётом значений по умолчанию. Поддерживаются `KZT`, `JPY`, `USD`, `EUR`, `GBP`. Разрядности указаны в `manifest.currency_exponents`.
 - `timezone`: имя IANA (включая зоны с DST, например `Europe/Berlin`, `America/New_York`, а также `Asia/Almaty` и `UTC`); все смещения и даты курсов вычисляются единообразно через `ZoneInfo`.
-- `fx_date_rule`: `payment_date` или `invoice_date`.
+- `fx_date_rule` принимает `payment_date` или `invoice_date`. Взаимодействующие сценарии рассчитаны на `payment_date`.
 
 Нулевые счётчики ошибок, опущенный или `false` флаг `include_distractors`, пустой список `interaction_scenarios: []` и значения по умолчанию нормализуются (убираются) в закрытом `provenance`.
 

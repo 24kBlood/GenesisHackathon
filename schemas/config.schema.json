@@ -4,6 +4,11 @@
   "title": "Generation configuration",
   "description": "Normalized v1 episode generation configuration. Optional fields default to the compact v1 baseline profile when omitted.",
   "type": "object",
+  "$defs": {
+    "supported_currency": {
+      "enum": ["EUR", "GBP", "JPY", "KZT", "USD"]
+    }
+  },
   "properties": {
     "schema_version": {
       "$ref": "common.schema.json#/$defs/version",
@@ -56,11 +61,11 @@
       "description": "Number of base obligations before distractors and interaction scenarios (defaults to 4)."
     },
     "base_currency": {
-      "$ref": "common.schema.json#/$defs/currency",
+      "$ref": "#/$defs/supported_currency",
       "description": "Company reporting/ledger currency (defaults to KZT)."
     },
     "foreign_currency": {
-      "$ref": "common.schema.json#/$defs/currency",
+      "$ref": "#/$defs/supported_currency",
       "description": "Primary foreign invoice/payment currency (defaults to JPY)."
     },
     "timezone": {
@@ -80,6 +85,38 @@
   "required": [
     "schema_version",
     "error_counts"
+  ],
+  "allOf": [
+    {
+      "if": { "required": ["fx_date_rule"], "properties": { "fx_date_rule": { "const": "invoice_date" } } },
+      "then": { "properties": { "interaction_scenarios": { "maxItems": 0 } } }
+    },
+    {
+      "not": {
+        "anyOf": [
+          {
+            "required": ["base_currency"],
+            "properties": { "base_currency": { "const": "JPY" }, "foreign_currency": { "const": "JPY" } }
+          },
+          {
+            "required": ["foreign_currency"],
+            "properties": { "base_currency": { "const": "KZT" }, "foreign_currency": { "const": "KZT" } }
+          },
+          {
+            "required": ["base_currency", "foreign_currency"],
+            "properties": { "base_currency": { "const": "EUR" }, "foreign_currency": { "const": "EUR" } }
+          },
+          {
+            "required": ["base_currency", "foreign_currency"],
+            "properties": { "base_currency": { "const": "GBP" }, "foreign_currency": { "const": "GBP" } }
+          },
+          {
+            "required": ["base_currency", "foreign_currency"],
+            "properties": { "base_currency": { "const": "USD" }, "foreign_currency": { "const": "USD" } }
+          }
+        ]
+      }
+    }
   ],
   "additionalProperties": false
 }
