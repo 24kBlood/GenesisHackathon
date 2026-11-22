@@ -23,6 +23,11 @@ _MAX_MEMORY_MIB = 4096
 _HOST_ENV_KEYS = ("PATH", "SYSTEMROOT", "WINDIR", "DOCKER_HOST", "XDG_RUNTIME_DIR", "DOCKER_CONTEXT")
 _IMAGE_INSPECT_FORMAT = '{"Id":{{json .Id}},"Config":{{json .Config}}}'
 _IMAGE_FIELDS = _IMAGE_INSPECT_FORMAT
+_NEVER_STARTED = b"0001-01-01T00:00:00Z"
+_START_TIMESTAMP = re.compile(
+    rb"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})"
+)
+_START_POLL_SECONDS = 0.025
 _DAEMON_RESPONSE_BYTES = 512
 _IMAGE_INSPECT_BYTES = 64 * 1024
 _CLEANUP_SECONDS = 5
@@ -59,8 +64,7 @@ def _validated_memory(value: str) -> str:
         raise ValueError("invalid memory limit")
     amount, unit = int(match.group(1)), match.group(2).lower()
     numerator, denominator = _MEMORY_SCALE[unit]
-    mib = (amount * numerator) // denominator
-    if mib > _MAX_MEMORY_MIB:
+    if amount * numerator > _MAX_MEMORY_MIB * denominator:
         raise ValueError(f"memory must be at most {_MAX_MEMORY_MIB} MiB")
     return value
 
@@ -215,6 +219,22 @@ class DockerPolicy:
             return False
         return not result
 
+    async def _wait_until_started(self, process: asyncio.subprocess.Process, deadline: float, name: str) -> None:
+        while True:
+            # Read Docker state after checking the attach process. A worker can exit
+            # before we observe it running, but StartedAt survives that exit.
+            attach_exited = process.returncode is not None
+            started_at = await self._management(
+                deadline, "container", "inspect", "--format", "{{.State.StartedAt}}", name,
+            )
+            if _START_TIMESTAMP.fullmatch(started_at) is None:
+                raise TransportError(TransportCode.PROCESS_ERROR)
+            if started_at != _NEVER_STARTED:
+                return
+            if attach_exited:
+                raise TransportError(TransportCode.PROCESS_ERROR)
+            await before_deadline(asyncio.sleep(_START_POLL_SECONDS), deadline)
+
     @asynccontextmanager
     async def open(self, deadline: float):
         try:
@@ -240,6 +260,10 @@ class DockerPolicy:
                 raise TransportError(error.code, phase="setup") from error
             channel = JsonlProcess(process)
             try:
+                try:
+                    await self._wait_until_started(process, deadline, name)
+                except TransportError as error:
+                    raise TransportError(error.code, phase="setup") from error
                 yield channel
             finally:
                 await channel.close()

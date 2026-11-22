@@ -1,14 +1,15 @@
 """Regressions for the verified audit findings fixed on the remediation branch."""
 
-from contextlib import asynccontextmanager, contextmanager, redirect_stdout
+from contextlib import asynccontextmanager, contextmanager, redirect_stderr, redirect_stdout
 from copy import deepcopy
+import errno
 from io import StringIO
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from genesis.cli import __main__ as cli_main
 from genesis.cli.run_policy import _publish_trace, _resolve_profile, run_policy
@@ -78,6 +79,36 @@ class AdmissionTests(TestCase):
 
 
 class SetupFailureTests(IsolatedAsyncioTestCase):
+    async def test_attach_exit_is_attributed_using_docker_start_state(self):
+        image = json.dumps({"Id": "sha256:" + "0" * 64, "Config": {}}).encode("ascii")
+        for started_at, started in ((b"0001-01-01T00:00:00Z", False), (b"2026-11-22T10:00:00Z", True)):
+            with self.subTest(started=started):
+                runner = DockerPolicy("synthetic:local")
+                process = SimpleNamespace(returncode=125)
+                channel = SimpleNamespace(
+                    send=AsyncMock(), receive=AsyncMock(side_effect=TransportError(TransportCode.EOF)),
+                    close=AsyncMock(),
+                )
+                env = _StubEnv()
+                management = AsyncMock(side_effect=[image, b"created", started_at, b"removed"])
+                with (
+                    patch.object(runner, "_management", management),
+                    patch.object(runner, "_command", AsyncMock(return_value=process)),
+                    patch("genesis.environment.docker_policy.JsonlProcess", return_value=channel),
+                ):
+                    if started:
+                        result = await run_episode(env, seed=1, config={}, runner=runner)
+                        self.assertEqual(result.transport_error, TransportCode.EOF)
+                        self.assertTrue(env.truncated)
+                    else:
+                        with self.assertRaises(TransportError) as failure:
+                            await run_episode(env, seed=1, config={}, runner=runner)
+                        self.assertEqual(failure.exception.phase, "setup")
+                        self.assertFalse(env.truncated)
+                        channel.send.assert_not_awaited()
+                channel.close.assert_awaited_once()
+                self.assertEqual(management.await_args.args[1:4], ("rm", "--force", "--volumes"))
+
     async def test_setup_timeout_is_rethrown_without_scoring(self):
         @asynccontextmanager
         async def setup_runner(deadline):
@@ -124,12 +155,13 @@ class ResourceCeilingTests(TestCase):
     def test_documented_ceilings_apply_to_every_input_format(self):
         for bad in (
             {"cpus": 3}, {"cpus": 2.5}, {"cpus": "3"},
-            {"memory": "5g"}, {"memory": "4097m"},
+            {"memory": "5g"}, {"memory": "4097m"}, {"memory": "4194305k"},
         ):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 DockerPolicy("synthetic:local", **bad)
         runner = DockerPolicy("synthetic:local", cpus="2", memory="2g")
         self.assertEqual((runner._cpus, runner._memory), ("2", "2g"))
+        self.assertEqual(DockerPolicy("synthetic:local", memory="4194304k")._memory, "4194304k")
 
 
 class CliRemediationTests(TestCase):
@@ -166,10 +198,24 @@ class CliRemediationTests(TestCase):
                 cpus=1, memory_mib=512, tmpfs_mib=0, trace=destination,
             )
             out = StringIO()
-            with redirect_stdout(out):
+            errors = StringIO()
+            with redirect_stdout(out), redirect_stderr(errors):
                 code = run_policy(self.root, args)
-            result = json.loads(out.getvalue().strip().splitlines()[-1])
+            result = json.loads(out.getvalue())
             self.assertEqual(code, 0)
             self.assertTrue(result["terminated"])
             self.assertIn("failed", result["trace"])
+            self.assertIn("trace publication failed", errors.getvalue())
             self.assertEqual(destination.read_bytes(), b"original\n")
+
+    def test_trace_publication_reports_unsupported_link_without_overwriting(self):
+        with _temporary_trace() as (directory, destination):
+            destination.write_bytes(b"original\n")
+            with (
+                patch("genesis.cli.run_policy.os.link", side_effect=OSError(errno.ENOTSUP, "no hard links")),
+                self.assertRaises(OSError) as failure,
+            ):
+                _publish_trace(destination, b"replacement\n")
+            self.assertEqual(failure.exception.errno, errno.ENOTSUP)
+            self.assertEqual(destination.read_bytes(), b"original\n")
+            self.assertEqual(list(directory.iterdir()), [destination])

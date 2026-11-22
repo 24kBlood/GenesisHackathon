@@ -1,9 +1,9 @@
 """Run a public episode with a baseline or a local policy image."""
 
 import asyncio
-import errno
 import json
 import os
+import sys
 from time import monotonic
 from uuid import uuid4
 
@@ -44,14 +44,7 @@ def _publish_trace(destination, contents):
             output.write(contents)
             output.flush()
             os.fsync(output.fileno())
-        try:
-            os.link(staged, destination)
-        except OSError as error:
-            if error.errno not in (errno.EPERM, errno.ENOTSUP, getattr(errno, "EOPNOTSUPP", errno.ENOTSUP)):
-                raise
-            if destination.exists():
-                raise FileExistsError(f"trace already exists: {destination}") from None
-            os.replace(staged, destination)
+        os.link(staged, destination)
     finally:
         staged.unlink(missing_ok=True)
 
@@ -74,7 +67,7 @@ def run_policy(root, args):
                 _publish_trace(args.trace, trace.to_jsonl())
             except (OSError, ValueError) as error:
                 result["trace"] = f"failed: {type(error).__name__}: {error}"
-                print(f"trace publication failed: {error}")
+                print(f"trace publication failed: {error}", file=sys.stderr)
             else:
                 result["trace"] = "written"
     except TransportError as error:

@@ -2,6 +2,8 @@
 
 Исторический прогон ниже привязан к коммиту [5f5d681](https://github.com/24kBlood/GenesisHackathon/commit/5f5d6816ade3122f789c3b76170dcb1ba0a2604e). Первая версия этой страницы вошла в [9b620fc](https://github.com/24kBlood/GenesisHackathon/commit/9b620fc20f6bf4d0ce3ce1e8adfbe398d2d3cccd). Команда ниже проверяет текущий `main`. Официальная оценка проводится отдельно на закрытых эпизодах организаторов.
 
+Актуальные проверки `main` доступны в GitHub Actions. [Офлайн-запуск](https://github.com/24kBlood/GenesisHackathon/actions/workflows/offline-verify.yml?query=branch%3Amain) · [Изоляция политики](https://github.com/24kBlood/GenesisHackathon/actions/workflows/policy-isolation.yml?query=branch%3Amain) · [Допуск закрытых эпизодов](../../docs/AUDIT_REMEDIATION.md)
+
 ## Запустить проверку
 
 Если установлены Git и uv, выполните команду из любой папки в PowerShell или Bash. Для первоначальной загрузки пакета и зависимостей нужен интернет.
