@@ -292,7 +292,7 @@ class CliVerifyTests(unittest.TestCase):
         pyproject = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         self.assertEqual(pyproject["project"]["name"], "genesis-fintech-env")
         self.assertEqual(pyproject["project"]["requires-python"], ">=3.11")
-        self.assertIn("tzdata>=2025.2", pyproject["project"]["dependencies"])
+        self.assertIn("tzdata==2025.2", pyproject["project"]["dependencies"])
         self.assertEqual(pyproject["project"]["scripts"]["genesis"], "genesis.cli.__main__:main")
         self.assertIsNotNone(getattr(evaluation_pkg, "__file__", None))
         self.assertTrue(Path(evaluation_pkg.__file__).name == "__init__.py")

@@ -11,6 +11,8 @@ from genesis.environment.episode import build_episode
 from genesis.environment.jsonl import TransportCode, TransportError
 from genesis.generation import generate_closed_episode
 
+from .admission import require_admissible_episode
+
 
 class PolicyChannel(Protocol):
     async def send(self, message: dict[str, object], deadline: float) -> None: ...
@@ -36,6 +38,7 @@ def closed_environment(*, clock: Callable[[], float] = monotonic) -> AuditorEnv:
     """Build an eval environment for cases provisioned by the trusted coordinator."""
     def factory(seed, config):
         episode = generate_closed_episode(seed, config)
+        require_admissible_episode(episode)
         public = episode.public
         return build_episode(
             task="Проверьте открытые записи эпизода.",
@@ -88,7 +91,9 @@ async def run_episode(
                 if terminated or truncated:
                     break
     except TransportError as error:
-        if error.code is TransportCode.PROCESS_ERROR:
+        # Infrastructure setup never reaches the policy. It is a coordinator
+        # failure, not a graded episode outcome, regardless of its transport code.
+        if error.phase == "setup" or error.code is TransportCode.PROCESS_ERROR:
             raise
         fault = error.code
         env.truncate(reason="timeout" if fault is TransportCode.TIMEOUT else "transport")

@@ -15,8 +15,11 @@ from .jsonl import FRAME_BYTES, JsonlProcess, TransportCode, TransportError, bef
 
 _IMAGE_REFERENCE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,255}")
 _IMAGE_ID = re.compile(r"sha256:[a-f0-9]{64}")
-_MEMORY_LIMIT = re.compile(r"[1-9][0-9]{0,8}[bkmgBKMG]?")
+_MEMORY_LIMIT = re.compile(r"([1-9][0-9]{0,8})([bkmgBKMG]?)")
 _CPU_LIMIT = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)")
+_MEMORY_SCALE = {"": (1, 1024 * 1024), "b": (1, 1024 * 1024), "k": (1, 1024), "m": (1, 1), "g": (1024, 1)}
+_MAX_CPUS = 2
+_MAX_MEMORY_MIB = 4096
 _HOST_ENV_KEYS = ("PATH", "SYSTEMROOT", "WINDIR", "DOCKER_HOST", "XDG_RUNTIME_DIR", "DOCKER_CONTEXT")
 _IMAGE_INSPECT_FORMAT = '{"Id":{{json .Id}},"Config":{{json .Config}}}'
 _IMAGE_FIELDS = _IMAGE_INSPECT_FORMAT
@@ -35,16 +38,31 @@ def _host_environment() -> dict[str, str]:
 
 def _validated_cpus(cpus: str | int | float) -> str:
     if type(cpus) is int:
-        if cpus <= 0:
-            raise ValueError("cpus must be positive")
+        if cpus <= 0 or cpus > _MAX_CPUS:
+            raise ValueError(f"cpus must be between 1 and {_MAX_CPUS}")
         return str(cpus)
     if type(cpus) is float:
-        if not math.isfinite(cpus) or cpus <= 0:
-            raise ValueError("cpus must be positive and finite")
+        if not math.isfinite(cpus) or cpus <= 0 or cpus > _MAX_CPUS:
+            raise ValueError(f"cpus must be positive, finite and at most {_MAX_CPUS}")
         return f"{cpus:g}"
-    if type(cpus) is str and _CPU_LIMIT.fullmatch(cpus) is not None and float(cpus) > 0:
+    if (
+        type(cpus) is str and _CPU_LIMIT.fullmatch(cpus) is not None
+        and 0 < float(cpus) <= _MAX_CPUS
+    ):
         return cpus
     raise ValueError("invalid cpus limit")
+
+
+def _validated_memory(value: str) -> str:
+    match = _MEMORY_LIMIT.fullmatch(value) if type(value) is str else None
+    if match is None:
+        raise ValueError("invalid memory limit")
+    amount, unit = int(match.group(1)), match.group(2).lower()
+    numerator, denominator = _MEMORY_SCALE[unit]
+    mib = (amount * numerator) // denominator
+    if mib > _MAX_MEMORY_MIB:
+        raise ValueError(f"memory must be at most {_MAX_MEMORY_MIB} MiB")
+    return value
 
 
 def _create_arguments(
@@ -98,9 +116,7 @@ class DockerPolicy:
             raise ValueError("invalid local policy image reference")
         normalized_cpus = _validated_cpus(cpus)
         if memory is not None:
-            if type(memory) is not str or _MEMORY_LIMIT.fullmatch(memory) is None:
-                raise ValueError("invalid memory limit")
-            resolved_memory = memory
+            resolved_memory = _validated_memory(memory)
         else:
             if type(memory_mib) is not int or not 64 <= memory_mib <= 4096:
                 raise ValueError("invalid memory_mib limit")
@@ -201,21 +217,27 @@ class DockerPolicy:
 
     @asynccontextmanager
     async def open(self, deadline: float):
-        image_id = await self._local_image_id(deadline)
+        try:
+            image_id = await self._local_image_id(deadline)
+        except TransportError as error:
+            raise TransportError(error.code, phase="setup") from error
         name = "genesis-policy-" + uuid4().hex
         created = False
         try:
-            await self._management(
-                deadline,
-                *_create_arguments(
-                    name, image_id, memory=self._memory, cpus=self._cpus,
-                    pids_limit=self._pids_limit, tmpfs_tmp_mb=self._tmpfs_tmp_mb,
-                ),
-            )
-            created = True
-            process = await before_deadline(
-                self._command("start", "--attach", "--interactive", name, attached=True), deadline,
-            )
+            try:
+                await self._management(
+                    deadline,
+                    *_create_arguments(
+                        name, image_id, memory=self._memory, cpus=self._cpus,
+                        pids_limit=self._pids_limit, tmpfs_tmp_mb=self._tmpfs_tmp_mb,
+                    ),
+                )
+                created = True
+                process = await before_deadline(
+                    self._command("start", "--attach", "--interactive", name, attached=True), deadline,
+                )
+            except TransportError as error:
+                raise TransportError(error.code, phase="setup") from error
             channel = JsonlProcess(process)
             try:
                 yield channel

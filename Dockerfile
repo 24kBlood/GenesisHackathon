@@ -25,6 +25,6 @@ COPY benchmarks/ benchmarks/
 COPY trajectories/ trajectories/
 COPY LICENSE NOTICE ./
 
-ENV PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONTZPATH=""
 USER 65532:65532
 CMD ["python", "-m", "genesis.cli", "verify", "--all"]
